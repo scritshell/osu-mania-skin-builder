@@ -59,7 +59,8 @@ public class SkinIniRoundTripTest {
         k4.setUniformRiceColor(new Color(100, 200, 255, 255));
         k4.setUniformLnColor(new Color(255, 100, 150, 255));
         k4.setJudgementLine(false);
-        k4.setPercyType(ManiaKeyConfig.PercyType.PERCY_A);
+        k4.setPercySize(24);
+        k4.setPercyShape(ManiaKeyConfig.PercyShape.ROUNDED);
         k4.setUseGlobalTransparency(true);
         k4.setGlobalAlpha(200);
 

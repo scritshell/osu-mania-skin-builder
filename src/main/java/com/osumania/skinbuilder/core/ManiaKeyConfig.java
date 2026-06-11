@@ -14,12 +14,11 @@ public class ManiaKeyConfig {
     // Enums
     // -------------------------------------------------------------------------
 
-    public enum PercyType {
-        NONE,       // Sin percy: usa la imagen de body que tengas en la skin base
-        PERCY_A,    // Percy tipo A (body limpio, sin decoración)
-        PERCY_B,    // Percy tipo B (con borde)
-        PERCY_C,    // Percy tipo C (gradiente)
-        PERCY_D     // Percy tipo D (con brillo central)
+    public enum PercyShape {
+        FLAT,
+        ROUNDED,
+        TRIANGLE,
+        FADE
     }
 
     public enum SpecialStyle {
@@ -130,7 +129,8 @@ public class ManiaKeyConfig {
     private int[] lightingLWidth      = null;
 
     // --- Percy ---
-    private PercyType percyType       = PercyType.NONE;
+    private int percySize             = 0;
+    private PercyShape percyShape     = PercyShape.FLAT;
     private boolean useSeparateLnTail = false; // usar NoteImageXH distinto al head
 
     // --- Opciones de transparencia global ---
@@ -402,8 +402,13 @@ public class ManiaKeyConfig {
     public int[] getLightingLWidth() { return lightingLWidth; }
     public void setLightingLWidth(int[] lightingLWidth) { this.lightingLWidth = lightingLWidth; }
 
-    public PercyType getPercyType() { return percyType; }
-    public void setPercyType(PercyType percyType) { this.percyType = percyType; }
+    public int getPercySize() { return percySize; }
+    public void setPercySize(int percySize) { this.percySize = Math.max(0, Math.min(400, percySize)); }
+
+    public PercyShape getPercyShape() { return percyShape; }
+    public void setPercyShape(PercyShape percyShape) {
+        this.percyShape = percyShape == null ? PercyShape.FLAT : percyShape;
+    }
 
     public boolean isUseSeparateLnTail() { return useSeparateLnTail; }
     public void setUseSeparateLnTail(boolean useSeparateLnTail) { this.useSeparateLnTail = useSeparateLnTail; }

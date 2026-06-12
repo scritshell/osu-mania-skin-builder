@@ -4,13 +4,16 @@ import com.osumania.skinbuilder.core.ManiaKeyConfig;
 import com.osumania.skinbuilder.core.SkinConfig;
 import com.osumania.skinbuilder.core.SkinIniParser;
 import com.osumania.skinbuilder.core.SkinIniWriter;
+import com.osumania.skinbuilder.image.PreviewAssetManager;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -35,6 +38,12 @@ public class MainWindow {
 
     /** Skin cargada actualmente; null si aún no se ha importado ninguna. */
     private SkinConfig currentSkin = null;
+    
+    /** Path del .osk importado; usado para cargar assets en el preview. */
+    private Path currentOskPath = null;
+    
+    /** Gestor de caché de imágenes para el preview. */
+    private PreviewAssetManager assetManager = new PreviewAssetManager();
 
     private Tab generalTab;
     private GeneralTab generalTabContent;
@@ -91,6 +100,39 @@ public class MainWindow {
                     ? SkinIniParser.parseOsk(path)
                     : SkinIniParser.parseFile(path);
 
+            // Guardar la Path del OSK para cargar assets después
+            this.currentOskPath = path;
+            loadSkin(parsed);
+
+        } catch (Exception e) {
+            showError("Error de importación",
+                    "No se pudo leer la skin:\n" + e.getMessage());
+        }
+    }
+
+    /**
+     * Abre el diálogo de selección de carpeta y busca un skin.ini dentro.
+     * Si lo encuentra, lo parsea y lo carga.
+     */
+    public void importFolder() {
+        DirectoryChooser dc = new DirectoryChooser();
+        dc.setTitle("Seleccionar carpeta de la skin");
+        File dir = dc.showDialog(stage);
+        if (dir == null) return;
+
+        try {
+            Path skinIniPath = dir.toPath().resolve("skin.ini");
+            if (!Files.exists(skinIniPath)) {
+                showError("No encontrado",
+                        "No se encontró skin.ini en la carpeta seleccionada.");
+                return;
+            }
+
+            // Parsear el skin.ini
+            SkinConfig parsed = SkinIniParser.parseFile(skinIniPath);
+
+            // Guardar la Path del skin.ini para cargar assets
+            this.currentOskPath = skinIniPath;
             loadSkin(parsed);
 
         } catch (Exception e) {
@@ -105,6 +147,11 @@ public class MainWindow {
      */
     private void loadSkin(SkinConfig config) {
         this.currentSkin = config;
+
+        // Cargar assets del OSK para el preview
+        if (currentOskPath != null) {
+            assetManager.loadAssetsFromOsk(currentOskPath, config);
+        }
 
         // Eliminar todas las pestañas de keymodes (preservar General)
         tabPane.getTabs().removeIf(tab -> tab != generalTab);
@@ -138,7 +185,7 @@ public class MainWindow {
         }
 
         Tab tab = new Tab(label);
-        tab.setContent(new KeymodeTab(km));
+        tab.setContent(new KeymodeTab(km, assetManager));
 
         // Al cerrar la pestaña, deshabilitar el keymode en el modelo
         tab.setOnClosed(e -> {
@@ -186,8 +233,11 @@ public class MainWindow {
         // --- Archivo ---
         Menu menuFile = new Menu("_Archivo");
 
-        MenuItem miImport = new MenuItem("Importar skin (.osk / skin.ini)…");
-        miImport.setOnAction(e -> importOsk());
+        MenuItem miImportFile = new MenuItem("Importar archivo (.osk)…");
+        miImportFile.setOnAction(e -> importOsk());
+
+        MenuItem miImportFolder = new MenuItem("Importar carpeta de skin…");
+        miImportFolder.setOnAction(e -> importFolder());
 
         MenuItem miExport = new MenuItem("Exportar skin.ini…");
         miExport.setOnAction(e -> exportSkin());
@@ -195,7 +245,7 @@ public class MainWindow {
         MenuItem miClose = new MenuItem("Salir");
         miClose.setOnAction(e -> stage.close());
 
-        menuFile.getItems().addAll(miImport, new SeparatorMenuItem(), miExport,
+        menuFile.getItems().addAll(miImportFile, miImportFolder, new SeparatorMenuItem(), miExport,
                 new SeparatorMenuItem(), miClose);
 
         // --- Keymode ---

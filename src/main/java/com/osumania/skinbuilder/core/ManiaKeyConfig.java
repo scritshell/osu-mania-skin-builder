@@ -28,36 +28,38 @@ public class ManiaKeyConfig {
     }
 
     public enum NoteBodyStyle {
-        STRETCH(0),     // Imagen estirada
-        CASCADE_TOP(1), // Cascada desde arriba
-        CASCADE_BOTTOM(2); // Cascada desde abajo
+        STRETCH(0),
+        CASCADE_TOP(1),
+        CASCADE_BOTTOM(2);
 
         public final int value;
         NoteBodyStyle(int v) { this.value = v; }
     }
 
     /**
-     * Configuración visual por columna individual.
-     * Permite diferenciar colores y notas entre columnas (rice vs LN vs special).
+     * Per-column visual configuration.
+     * Tracks colours, note images, and key/receptor images for each column.
      */
     public static class ColumnConfig {
-        // Imagen de nota (rice)
+        // Note images
         public String noteImageRice     = "mania-note1";
-        // Imagen de LN head
         public String noteImageLnHead   = "mania-note1H";
-        // Imagen de LN body
         public String noteImageLnBody   = "mania-note1L";
-        // Imagen de LN tail (null = usar el head al revés, por defecto osu!)
         public String noteImageLnTail   = null;
-        // Color de columna (tinte aplicado a la nota rice)
+
+        // ---- TASK 1: key/receptor images per column ----
+        /** Base key image (idle state). e.g. "mania-key1" */
+        public String keyImage          = "mania-key1";
+        /** Pressed key image. e.g. "mania-key1D" */
+        public String keyImageDown      = "mania-key1D";
+
+        // Colours
         public Color riceColor          = Color.WHITE;
-        // Color separado para LN (si useSeparateLnColor = true en el padre)
         public Color lnColor            = Color.WHITE;
-        // ColourLight de esa columna
         public Color lightColor         = new Color(255, 255, 255, 255);
-        // Ancho de columna en px
+
+        // Layout
         public int columnWidth          = 64;
-        // Grosor de la línea de columna IZQUIERDA (la derecha la define la col siguiente)
         public int columnLineWidth      = 0;
 
         public ColumnConfig() {}
@@ -67,6 +69,8 @@ public class ManiaKeyConfig {
             this.noteImageLnHead = other.noteImageLnHead;
             this.noteImageLnBody = other.noteImageLnBody;
             this.noteImageLnTail = other.noteImageLnTail;
+            this.keyImage        = other.keyImage;
+            this.keyImageDown    = other.keyImageDown;
             this.riceColor       = other.riceColor;
             this.lnColor         = other.lnColor;
             this.lightColor      = other.lightColor;
@@ -76,76 +80,79 @@ public class ManiaKeyConfig {
     }
 
     // -------------------------------------------------------------------------
-    // Campos principales del bloque [Mania]
+    // Main [Mania] block fields
     // -------------------------------------------------------------------------
 
-    /** Número de teclas: 1–18 */
     private int keys;
-
-    /** Si este keymode está activo y se incluirá en la exportación */
     private boolean enabled = true;
 
-    // --- Posicionamiento ---
-    private int columnStart     = 250;
-    private int hitPosition     = 410;
-    private int scorePosition   = 210;
-    private int comboPosition   = 210;
-    private int lightPosition   = 435;
-    private int lightFramePerSecond = 25;
-    private int barlineHeight   = 0;
+    // Positioning
+    private int columnStart          = 250;
+    private int hitPosition          = 410;
+    private int scorePosition        = 210;
+    private int comboPosition        = 210;
+    private int lightPosition        = 435;
+    private int lightFramePerSecond  = 25;
+    private int barlineHeight        = 0;
 
-    // --- Comportamiento ---
-    private SpecialStyle specialStyle = SpecialStyle.NONE;
-    private boolean upsideDown        = false;
-    private boolean judgementLine     = true;
-    private NoteBodyStyle noteBodyStyle = NoteBodyStyle.STRETCH;
-    private boolean noteFlipWhenUpsideDown   = true;
-    private boolean noteFlipWhenUpsideDownH  = true;
-    private boolean noteFlipWhenUpsideDownT  = true;
-    private boolean keysUnderNotes    = false;
+    // ---- TASK 1: receptor offset (Y px, -200..200) ----
+    /**
+     * Visual-only Y offset applied to the receptor/key images.
+     * Positive = shift receptor downward (transparent rows added on top).
+     * Negative = shift receptor upward (transparent rows added on bottom).
+     * Range clamped to [-200, 200]. Does NOT affect HitPosition in skin.ini.
+     */
+    private int receptorOffset = 0;
 
-    // --- Split stages (10K+) ---
-    private boolean splitStages       = false;
-    private int stageSeparation       = 40; // px entre stages si splitStages=true
-    private boolean separateScore     = true;
+    // Behaviour
+    private SpecialStyle specialStyle               = SpecialStyle.NONE;
+    private boolean upsideDown                      = false;
+    private boolean judgementLine                   = true;
+    private NoteBodyStyle noteBodyStyle             = NoteBodyStyle.STRETCH;
+    private boolean noteFlipWhenUpsideDown          = true;
+    private boolean noteFlipWhenUpsideDownH         = true;
+    private boolean noteFlipWhenUpsideDownT         = true;
+    private boolean keysUnderNotes                  = false;
 
-    // --- Visuales globales ---
-    private Color colourBarline       = new Color(255, 255, 255, 255);
-    private Color colourHold          = new Color(255, 255, 255, 255);
-    private String fontCombo          = "combo";
-    private int widthForNoteHeightScale = 0; // 0 = desactivado
+    // Split stages (10K+)
+    private boolean splitStages   = false;
+    private int stageSeparation   = 40;
+    private boolean separateScore = true;
 
-    // --- Imágenes de stage ---
-    private String stageHintImage     = "mania-stage-hint";
-    private String stageLeftImage     = "mania-stage-left";
-    private String stageRightImage    = "mania-stage-right";
-    private String stageBottomImage   = null;
-    private String warningArrowImage  = null;
-    private String lightingNImage     = "lightingN";
-    private String lightingLImage     = "lightingL";
+    // Global visuals
+    private Color colourBarline             = new Color(255, 255, 255, 255);
+    private Color colourHold                = new Color(255, 255, 255, 255);
+    private String fontCombo                = "combo";
+    private int widthForNoteHeightScale     = 0;
 
-    /** Ancho del lighting por columna (null = no especificado) */
-    private int[] lightingNWidth      = null;
-    private int[] lightingLWidth      = null;
+    // Stage images
+    private String stageHintImage    = "mania-stage-hint";
+    private String stageLeftImage    = "mania-stage-left";
+    private String stageRightImage   = "mania-stage-right";
+    private String stageBottomImage  = null;
+    private String warningArrowImage = null;
+    private String lightingNImage    = "lightingN";
+    private String lightingLImage    = "lightingL";
 
-    // --- Percy ---
-    private int percySize             = 0;
-    private PercyShape percyShape     = PercyShape.FLAT;
-    private boolean useSeparateLnTail = false; // usar NoteImageXH distinto al head
+    private int[] lightingNWidth = null;
+    private int[] lightingLWidth = null;
 
-    // --- Opciones de transparencia global ---
-    /** Si true, aplica alpha global a todas las notas de este keymode */
+    // Percy
+    private int percySize                = 0;
+    private PercyShape percyShape        = PercyShape.FLAT;
+    private boolean useSeparateLnTail    = false;
+
+    // Global transparency
     private boolean useGlobalTransparency = false;
     private int globalAlpha               = 255;
 
-    /** Si true, las LN usan colores distintos a las rice */
-    private boolean useSeparateLnColor    = false;
+    private boolean useSeparateLnColor = false;
 
-    // --- HD/FI overlay ---
+    // HD/FI overlay
     public enum HdFiMode { NONE, HD, FI, BOTH }
     private HdFiMode hdFiMode = HdFiMode.NONE;
 
-    // --- Configuración por columna ---
+    // Per-column configuration
     private List<ColumnConfig> columns = new ArrayList<>();
 
     // -------------------------------------------------------------------------
@@ -157,27 +164,33 @@ public class ManiaKeyConfig {
         initDefaultColumns(keys);
     }
 
-    /**
-     * Inicializa columnas con valores por defecto según el número de teclas.
-     * Aplica un patrón estándar note1/note2/noteS basado en la posición.
-     */
     private void initDefaultColumns(int keys) {
         columns.clear();
         for (int i = 0; i < keys; i++) {
-            ColumnConfig col = new ColumnConfig();
-            col.columnWidth = defaultColumnWidth(keys);
-            String noteType = resolveDefaultNoteType(i, keys);
-            col.noteImageRice   = "mania-" + noteType;
-            col.noteImageLnHead = "mania-" + noteType + "H";
-            col.noteImageLnBody = "mania-" + noteType + "L";
-            col.lightColor      = defaultLightColor(i, keys);
-            col.columnLineWidth = defaultLineWidth(i, keys);
+            ColumnConfig col     = new ColumnConfig();
+            col.columnWidth      = defaultColumnWidth(keys);
+            String noteType      = resolveDefaultNoteType(i, keys);
+            col.noteImageRice    = "mania-" + noteType;
+            col.noteImageLnHead  = "mania-" + noteType + "H";
+            col.noteImageLnBody  = "mania-" + noteType + "L";
+            col.lightColor       = defaultLightColor(i, keys);
+            col.columnLineWidth  = defaultLineWidth(i, keys);
+
+            // Default key images follow the same 1/2/S pattern as notes
+            if (isSpecialColumn(i, keys)) {
+                col.keyImage     = "mania-keyS";
+                col.keyImageDown = "mania-keySd";
+            } else {
+                String kt        = (i % 2 == 0) ? "key1" : "key2";
+                col.keyImage     = "mania-" + kt;
+                col.keyImageDown = "mania-" + kt + "d";
+            }
             columns.add(col);
         }
     }
 
     // -------------------------------------------------------------------------
-    // Helpers de valores por defecto
+    // Default value helpers
     // -------------------------------------------------------------------------
 
     private int defaultColumnWidth(int keys) {
@@ -194,90 +207,61 @@ public class ManiaKeyConfig {
         return 30;
     }
 
-    /**
-     * Determina qué tipo de nota usar por defecto (note1, note2, noteS)
-     * según la posición en la columna y el patrón típico de ese keymode.
-     */
     private String resolveDefaultNoteType(int col, int keys) {
-        // Columna especial (scratch / S) = noteS
         if (isSpecialColumn(col, keys)) return "noteS";
-        // Alternancia note1 / note2 por posición
         return (col % 2 == 0) ? "note1" : "note2";
     }
 
-    /**
-     * Determina si una columna es "especial" (scratch en BMS/IIDX, centro en 5K/7K).
-     */
     public boolean isSpecialColumn(int col, int keys) {
         switch (keys) {
-            case 5: return col == 2;           // centro
-            case 7: return col == 3;           // centro
-            case 8: return col == 7;           // scratch derecha
-            case 9: return col == 0 || col == 8; // BMS scratches
-            case 10: return false;
-            case 12: return col == 0 || col == 6; // 10K2S scratches
-            case 14: return col == 0 || col == 13; // DP/EZ2 scratches
+            case 5:  return col == 2;
+            case 7:  return col == 3;
+            case 8:  return col == 7;
+            case 9:  return col == 0 || col == 8;
+            case 12: return col == 0 || col == 6;
+            case 14: return col == 0 || col == 13;
             case 16: return col == 0 || col == 15;
             default: return false;
         }
     }
 
     private Color defaultLightColor(int col, int keys) {
-        // Patrón rojo/azul/amarillo estándar
         int pos = col % 4;
         switch (pos) {
-            case 0: return new Color(255, 0, 0, 255);
-            case 1: return new Color(0, 0, 255, 255);
-            case 2: return new Color(255, 212, 0, 255);
-            case 3: return new Color(0, 0, 255, 255);
+            case 0:  return new Color(255, 0, 0, 255);
+            case 1:  return new Color(0, 0, 255, 255);
+            case 2:  return new Color(255, 212, 0, 255);
+            case 3:  return new Color(0, 0, 255, 255);
             default: return Color.WHITE;
         }
     }
 
     private int defaultLineWidth(int col, int keys) {
-        // Línea en los bordes exteriores del stage
-        if (col == 0 || col == keys - 1) return 2;
-        return 0;
+        return (col == 0 || col == keys - 1) ? 2 : 0;
     }
 
     // -------------------------------------------------------------------------
-    // Métodos utilitarios
+    // Utility methods
     // -------------------------------------------------------------------------
 
-    /**
-     * Recalcula el columnStart para centrar el stage en pantalla (512px de base).
-     * Pantalla osu! = 512px de ancho de campo de juego, referencia en 256.
-     */
     public void autoCenterStage() {
         int totalWidth = columns.stream().mapToInt(c -> c.columnWidth).sum();
         this.columnStart = 256 - (totalWidth / 2);
         if (this.columnStart < 0) this.columnStart = 0;
     }
 
-    /**
-     * Aplica el mismo ancho a todas las columnas.
-     */
     public void setUniformColumnWidth(int width) {
         columns.forEach(c -> c.columnWidth = width);
     }
 
-    /**
-     * Aplica el mismo color de rice a todas las columnas.
-     */
     public void setUniformRiceColor(Color color) {
         columns.forEach(c -> c.riceColor = color);
     }
 
-    /**
-     * Aplica el mismo color de LN a todas las columnas.
-     */
     public void setUniformLnColor(Color color) {
         columns.forEach(c -> c.lnColor = color);
     }
 
-    /**
-     * Devuelve una descripción legible del keymode para la UI.
-     */
     public String getDisplayName() {
         switch (keys) {
             case 10: return "10K";
@@ -290,13 +274,12 @@ public class ManiaKeyConfig {
     }
 
     // -------------------------------------------------------------------------
-    // Getters y setters
+    // Getters / Setters
     // -------------------------------------------------------------------------
 
     public int getKeys() { return keys; }
     public void setKeys(int keys) {
         this.keys = keys;
-        // Redimensionar la lista de columnas si cambia el número
         while (columns.size() < keys) {
             ColumnConfig last = columns.isEmpty() ? new ColumnConfig() : columns.get(columns.size() - 1);
             columns.add(new ColumnConfig(last));
@@ -329,6 +312,20 @@ public class ManiaKeyConfig {
 
     public int getBarlineHeight() { return barlineHeight; }
     public void setBarlineHeight(int barlineHeight) { this.barlineHeight = barlineHeight; }
+
+    // ---- TASK 1: receptorOffset getter/setter ----
+    /**
+     * Returns the visual Y offset applied to receptor/key images.
+     * Range: [-200, 200]. Does NOT affect skin.ini HitPosition.
+     */
+    public int getReceptorOffset() { return receptorOffset; }
+
+    /**
+     * Sets the visual Y offset for receptor/key images, clamped to [-200, 200].
+     */
+    public void setReceptorOffset(int offset) {
+        this.receptorOffset = Math.max(-200, Math.min(200, offset));
+    }
 
     public SpecialStyle getSpecialStyle() { return specialStyle; }
     public void setSpecialStyle(SpecialStyle specialStyle) { this.specialStyle = specialStyle; }

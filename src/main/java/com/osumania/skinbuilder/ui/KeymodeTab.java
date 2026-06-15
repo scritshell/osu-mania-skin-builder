@@ -24,6 +24,7 @@ public class KeymodeTab extends SplitPane {
     // Listas para actualizar la UI dinámicamente al aplicar paletas
     private final List<ColorPicker> ricePickers = new ArrayList<>();
     private final List<ColorPicker> lnPickers = new ArrayList<>();
+    private boolean isUpdatingPalette = false;
 
     // -------------------------------------------------------------------------
     // Sistema Escalable de Paletas (Java 17 Record)
@@ -203,7 +204,7 @@ public class KeymodeTab extends SplitPane {
         alphaRow.setAlignment(Pos.CENTER_LEFT);
 
         VBox rightChecks = new VBox(8, separateLn, separateTail, percySizeRow, percyShapeRow, offsetRow, transpCheck, alphaRow);
-        rightChecks.setMinWidth(320); // Previene que los textos se corten
+        rightChecks.setMinWidth(320);
 
         grid.add(rightChecks, 2, row, 2, 1);
 
@@ -273,21 +274,25 @@ public class KeymodeTab extends SplitPane {
     }
 
     private void applyPalette(Palette p) {
-        int keys = config.getKeys();
-        for (int i = 0; i < keys; i++) {
-            ManiaKeyConfig.ColumnConfig col = config.getColumn(i);
-            boolean isSpecial = config.isSpecialColumn(i, keys);
-            boolean isEven = (i % 2 != 0); // i=0 (col 1) es impar. i=1 (col 2) es par.
+        isUpdatingPalette = true;
+        try {
+            int keys = config.getKeys();
+            for (int i = 0; i < keys; i++) {
+                ManiaKeyConfig.ColumnConfig col = config.getColumn(i);
+                boolean isSpecial = config.isSpecialColumn(i, keys);
+                boolean isEven = (i % 2 != 0);
 
-            java.awt.Color targetRice = isSpecial ? p.specialRice() : (isEven ? p.evenRice() : p.oddRice());
-            java.awt.Color targetLn = isSpecial ? p.specialLn() : (isEven ? p.evenLn() : p.oddLn());
+                java.awt.Color targetRice = isSpecial ? p.specialRice() : (isEven ? p.evenRice() : p.oddRice());
+                java.awt.Color targetLn = isSpecial ? p.specialLn() : (isEven ? p.evenLn() : p.oddLn());
 
-            col.riceColor = targetRice;
-            col.lnColor = targetLn;
+                col.riceColor = targetRice;
+                col.lnColor = targetLn;
 
-            // Actualizar los ColorPickers de la interfaz para que reflejen el nuevo color
-            if (i < ricePickers.size()) ricePickers.get(i).setValue(toFx(targetRice));
-            if (i < lnPickers.size()) lnPickers.get(i).setValue(toFx(targetLn));
+                if (i < ricePickers.size()) ricePickers.get(i).setValue(toFx(targetRice));
+                if (i < lnPickers.size()) lnPickers.get(i).setValue(toFx(targetLn));
+            }
+        } finally {
+            isUpdatingPalette = false;
         }
         requestRedraw();
     }
@@ -299,7 +304,6 @@ public class KeymodeTab extends SplitPane {
     private TitledPane buildColumnsPanel() {
         int keys = config.getKeys();
 
-        // Limpiamos listas para evitar duplicados en recargas
         ricePickers.clear();
         lnPickers.clear();
 
@@ -335,7 +339,7 @@ public class KeymodeTab extends SplitPane {
         card.setPrefWidth(130);
 
         String borderColor = isSpecial ? "#c0a000" : "#c4c4c4";
-        String bgColor     = isSpecial ? "#fffbea" : "#ffffff";
+        String bgColor = isSpecial ? "#fffbea" : "#ffffff";
         card.setStyle(
                 "-fx-border-color: " + borderColor + ";" +
                         "-fx-border-radius: 9;" +
@@ -349,7 +353,6 @@ public class KeymodeTab extends SplitPane {
         Label title = new Label(titleText);
         title.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;" + (isSpecial ? " -fx-text-fill: #c0a000;" : ""));
 
-        // Width
         HBox widthRow = new HBox(6);
         widthRow.setAlignment(Pos.CENTER);
         Label widthLbl = new Label("Width:");
@@ -358,29 +361,36 @@ public class KeymodeTab extends SplitPane {
         widthField.setPrefWidth(52);
         widthRow.getChildren().addAll(widthLbl, widthField);
 
-        // Rice Color
         VBox riceBox = new VBox(4);
         riceBox.setAlignment(Pos.CENTER);
         Label riceLbl = new Label("Rice");
         riceLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #555;");
         ColorPicker ricePicker = new ColorPicker(toFx(col.riceColor));
         ricePicker.setPrefWidth(115);
-        ricePicker.setOnAction(e -> { col.riceColor = toAwt(ricePicker.getValue()); requestRedraw(); });
+        ricePicker.setOnAction(e -> {
+            if (!isUpdatingPalette) {
+                col.riceColor = toAwt(ricePicker.getValue());
+                requestRedraw();
+            }
+        });
         ricePickers.add(ricePicker);
         riceBox.getChildren().addAll(riceLbl, ricePicker);
 
-        // LN Color
         VBox lnBox = new VBox(4);
         lnBox.setAlignment(Pos.CENTER);
         Label lnLbl = new Label("LN");
         lnLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #555;");
         ColorPicker lnPicker = new ColorPicker(toFx(col.lnColor));
         lnPicker.setPrefWidth(115);
-        lnPicker.setOnAction(e -> { col.lnColor = toAwt(lnPicker.getValue()); requestRedraw(); });
+        lnPicker.setOnAction(e -> {
+            if (!isUpdatingPalette) {
+                col.lnColor = toAwt(lnPicker.getValue());
+                requestRedraw();
+            }
+        });
         lnPickers.add(lnPicker);
         lnBox.getChildren().addAll(lnLbl, lnPicker);
 
-        // Light Color
         VBox lightBox = new VBox(4);
         lightBox.setAlignment(Pos.CENTER);
         Label lightLbl = new Label("ColourLight");

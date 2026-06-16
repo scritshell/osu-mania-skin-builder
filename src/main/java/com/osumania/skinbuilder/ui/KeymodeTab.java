@@ -2,15 +2,22 @@ package com.osumania.skinbuilder.ui;
 
 import com.osumania.skinbuilder.core.ManiaKeyConfig;
 import com.osumania.skinbuilder.image.PreviewAssetManager;
+import com.osumania.skinbuilder.image.GifFrameExtractor;
+import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.stage.FileChooser;
 
+import javax.imageio.ImageIO;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.IntPredicate;
 
 /**
  * Pestaña de edición para un keymode concreto (4K, 7K, etc.).
@@ -27,22 +34,50 @@ public class KeymodeTab extends SplitPane {
     private boolean isUpdatingPalette = false;
 
     // -------------------------------------------------------------------------
-    // Sistema Escalable de Paletas (Java 17 Record)
+    // Sistema Escalable de Paletas (Específicas por Keymode)
     // -------------------------------------------------------------------------
-    private record Palette(String name,
-                           java.awt.Color oddRice, java.awt.Color evenRice, java.awt.Color specialRice,
-                           java.awt.Color oddLn, java.awt.Color evenLn, java.awt.Color specialLn) {}
+    private record GamemodePalette(String name,
+                                   IntPredicate isSpecialFn,
+                                   java.awt.Color normalRice, java.awt.Color specialRice,
+                                   java.awt.Color normalLn, java.awt.Color specialLn) {}
 
-    private static final List<Palette> PALETTES = List.of(
-            new Palette("🔴🔵 IIDX / O2Jam",
-                    java.awt.Color.WHITE, new java.awt.Color(0, 100, 255), java.awt.Color.RED,
-                    java.awt.Color.WHITE, new java.awt.Color(0, 100, 255), java.awt.Color.RED),
-            new Palette("⚪⚫ DJMAX",
-                    new java.awt.Color(200, 200, 200), new java.awt.Color(100, 100, 100), java.awt.Color.RED,
-                    new java.awt.Color(200, 200, 200), new java.awt.Color(100, 100, 100), java.awt.Color.RED),
-            new Palette("🎨 Reset",
-                    java.awt.Color.WHITE, java.awt.Color.WHITE, java.awt.Color.WHITE,
-                    java.awt.Color.WHITE, java.awt.Color.WHITE, java.awt.Color.WHITE)
+    private static final Map<Integer, List<GamemodePalette>> GAMEMODE_PALETTES = Map.of(
+            6, List.of(
+                    new GamemodePalette("6K Normal", i -> false,
+                            java.awt.Color.WHITE, java.awt.Color.RED, java.awt.Color.WHITE, java.awt.Color.RED),
+                    new GamemodePalette("5K1S (BMS)", i -> i == 5, // last column = scratch
+                            java.awt.Color.WHITE, java.awt.Color.RED, java.awt.Color.WHITE, java.awt.Color.RED)
+            ),
+            8, List.of(
+                    new GamemodePalette("4K4K", i -> false,
+                            java.awt.Color.WHITE, new java.awt.Color(0,100,255), java.awt.Color.WHITE, new java.awt.Color(0,100,255)),
+                    new GamemodePalette("7K1S (BMS)", i -> i == 7,
+                            java.awt.Color.WHITE, java.awt.Color.RED, java.awt.Color.WHITE, java.awt.Color.RED)
+            ),
+            12, List.of(
+                    new GamemodePalette("10K2S (BMS)", i -> i == 5 || i == 6,
+                            java.awt.Color.WHITE, java.awt.Color.RED, java.awt.Color.WHITE, java.awt.Color.RED),
+                    new GamemodePalette("6K6K", i -> false,
+                            java.awt.Color.WHITE, new java.awt.Color(0,100,255), java.awt.Color.WHITE, new java.awt.Color(0,100,255))
+            ),
+            14, List.of(
+                    new GamemodePalette("7K7K (BMS no scratch)", i -> false,
+                            java.awt.Color.WHITE, new java.awt.Color(0,100,255), java.awt.Color.WHITE, new java.awt.Color(0,100,255)),
+                    new GamemodePalette("EZ2AC 5K4K5K", i -> i == 4 || i == 9,
+                            java.awt.Color.WHITE, java.awt.Color.RED, java.awt.Color.WHITE, java.awt.Color.RED)
+            ),
+            16, List.of(
+                    new GamemodePalette("7K1S DP (BMS)", i -> i == 7 || i == 15,
+                            java.awt.Color.WHITE, java.awt.Color.RED, java.awt.Color.WHITE, java.awt.Color.RED),
+                    new GamemodePalette("EZ2AC Scratch", i -> i == 4 || i == 9 || i == 0 || i == 15,
+                            java.awt.Color.WHITE, java.awt.Color.RED, java.awt.Color.WHITE, java.awt.Color.RED)
+            ),
+            18, List.of(
+                    new GamemodePalette("10K8K", i -> false,
+                            java.awt.Color.WHITE, new java.awt.Color(0,100,255), java.awt.Color.WHITE, new java.awt.Color(0,100,255)),
+                    new GamemodePalette("9K9K", i -> false,
+                            java.awt.Color.WHITE, new java.awt.Color(255,212,0), java.awt.Color.WHITE, new java.awt.Color(255,212,0))
+            )
     );
 
     // -------------------------------------------------------------------------
@@ -84,9 +119,6 @@ public class KeymodeTab extends SplitPane {
         requestRedraw();
     }
 
-    // -------------------------------------------------------------------------
-    // Sincronización en Tiempo Real
-    // -------------------------------------------------------------------------
     private void requestRedraw() {
         if (previewCanvas != null) {
             previewCanvas.drawPreview(config);
@@ -219,48 +251,114 @@ public class KeymodeTab extends SplitPane {
     // -------------------------------------------------------------------------
 
     private TitledPane buildDecorationPanel() {
-        GridPane grid = new GridPane();
-        grid.setHgap(15);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(15));
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(15));
 
-        Label tip = new Label("💡 Tip: Si tienes un GIF animado para el fondo, usa la herramienta 'Conversor de GIF' en la pestaña General y escribe aquí el nombre base.");
+        Label tip = new Label("💡 Carga imágenes locales (.png / .gif) para inyectarlas directamente en la vista previa del stage sin salir del editor.");
         tip.setStyle("-fx-text-fill: #666; -fx-font-size: 11px;");
         tip.setWrapText(true);
-        grid.add(tip, 0, 0, 2, 1);
+        box.getChildren().add(tip);
 
-        int row = 1;
-        grid.add(label("StageLeftImage:"), 0, row);
-        grid.add(stringField(config.getStageLeftImage(), config::setStageLeftImage), 1, row++);
+        box.getChildren().addAll(
+                buildStageImageRow("StageLeftImage:", config.getStageLeftImage(), config::setStageLeftImage),
+                buildStageImageRow("StageRightImage:", config.getStageRightImage(), config::setStageRightImage),
+                buildStageImageRow("StageBottomImage:", config.getStageBottomImage(), config::setStageBottomImage),
+                buildStageImageRow("StageHintImage:", config.getStageHintImage(), config::setStageHintImage)
+        );
 
-        grid.add(label("StageRightImage:"), 0, row);
-        grid.add(stringField(config.getStageRightImage(), config::setStageRightImage), 1, row++);
-
-        grid.add(label("StageBottomImage:"), 0, row);
-        grid.add(stringField(config.getStageBottomImage(), config::setStageBottomImage), 1, row++);
-
-        grid.add(label("StageHintImage:"), 0, row);
-        grid.add(stringField(config.getStageHintImage(), config::setStageHintImage), 1, row++);
-
-        TitledPane pane = new TitledPane("Decoración del Stage", grid);
+        TitledPane pane = new TitledPane("Decoración del Stage", box);
         pane.setCollapsible(true);
         pane.setExpanded(false);
         pane.setStyle("-fx-font-weight: bold;");
         return pane;
     }
 
+    private HBox buildStageImageRow(String labelText, String currentVal, java.util.function.Consumer<String> setter) {
+        Label lbl = new Label(labelText);
+        lbl.setPrefWidth(120);
+        lbl.setStyle("-fx-font-size: 13px;");
+
+        TextField tf = new TextField(currentVal == null ? "" : currentVal);
+        tf.setPrefWidth(140);
+        tf.textProperty().addListener((obs, old, val) -> {
+            setter.accept(val.trim().isEmpty() ? null : val.trim());
+            requestRedraw();
+        });
+
+        Button btnLoad = new Button("📂 Cargar");
+        btnLoad.setStyle("-fx-cursor: hand; -fx-font-size: 11px;");
+        btnLoad.setOnAction(e -> {
+            FileChooser fc = new FileChooser();
+            fc.setTitle("Cargar imagen para " + labelText.replace(":", ""));
+            fc.getExtensionFilters().addAll(
+                    new FileChooser.ExtensionFilter("Imágenes", "*.png", "*.gif")
+            );
+            File file = fc.showOpenDialog(getScene().getWindow());
+            if (file != null) {
+                String fileName = file.getName();
+                tf.setText(fileName);
+                setter.accept(fileName);
+
+                if (fileName.toLowerCase().endsWith(".gif")) {
+                    loadGifAsync(file, fileName);
+                } else {
+                    try {
+                        java.awt.image.BufferedImage img = ImageIO.read(file);
+                        assetManager.putStageImage(fileName, img);
+                        requestRedraw();
+                    } catch (Exception ex) {
+                        System.err.println("Error leyendo PNG: " + ex.getMessage());
+                    }
+                }
+            }
+        });
+
+        HBox row = new HBox(10, lbl, tf, btnLoad);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    private void loadGifAsync(File file, String assetName) {
+        Task<List<GifFrameExtractor.GifFrame>> task = new Task<>() {
+            @Override
+            protected List<GifFrameExtractor.GifFrame> call() throws Exception {
+                return GifFrameExtractor.extract(file);
+            }
+        };
+        task.setOnSucceeded(e -> {
+            List<GifFrameExtractor.GifFrame> frames = task.getValue();
+            if (frames != null && !frames.isEmpty()) {
+                assetManager.putStageGif(assetName, frames);
+                previewCanvas.enableGifAnimation(true);
+                requestRedraw();
+            }
+        });
+        task.setOnFailed(e -> System.err.println("Error extrayendo GIF: " + task.getException()));
+        new Thread(task).start();
+    }
+
     // -------------------------------------------------------------------------
-    // UI: Paletas Rápidas
+    // UI: Paletas Rápidas (Dinámicas por Keymode)
     // -------------------------------------------------------------------------
 
     private VBox buildPalettePanel() {
-        Label title = new Label("Paletas Rápidas (Aplica a todas las columnas)");
+        Label title = new Label("Paletas Rápidas Especiales (" + config.getKeys() + "K)");
         title.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #333;");
 
         HBox buttonsBox = new HBox(10);
         buttonsBox.setAlignment(Pos.CENTER_LEFT);
 
-        for (Palette p : PALETTES) {
+        List<GamemodePalette> palettes = GAMEMODE_PALETTES.get(config.getKeys());
+        if (palettes == null || palettes.isEmpty()) {
+            palettes = List.of(
+                    new GamemodePalette("IIDX Genérico", i -> config.isSpecialColumn(i, config.getKeys()),
+                            java.awt.Color.WHITE, java.awt.Color.RED, java.awt.Color.WHITE, java.awt.Color.RED),
+                    new GamemodePalette("Reset a Blanco", i -> false,
+                            java.awt.Color.WHITE, java.awt.Color.WHITE, java.awt.Color.WHITE, java.awt.Color.WHITE)
+            );
+        }
+
+        for (GamemodePalette p : palettes) {
             Button btn = new Button(p.name());
             btn.setStyle("-fx-font-size: 12px; -fx-cursor: hand;");
             btn.setOnAction(e -> applyPalette(p));
@@ -273,17 +371,16 @@ public class KeymodeTab extends SplitPane {
         return root;
     }
 
-    private void applyPalette(Palette p) {
+    private void applyPalette(GamemodePalette p) {
         isUpdatingPalette = true;
         try {
             int keys = config.getKeys();
             for (int i = 0; i < keys; i++) {
                 ManiaKeyConfig.ColumnConfig col = config.getColumn(i);
-                boolean isSpecial = config.isSpecialColumn(i, keys);
-                boolean isEven = (i % 2 != 0);
+                boolean isSpecial = p.isSpecialFn().test(i);
 
-                java.awt.Color targetRice = isSpecial ? p.specialRice() : (isEven ? p.evenRice() : p.oddRice());
-                java.awt.Color targetLn = isSpecial ? p.specialLn() : (isEven ? p.evenLn() : p.oddLn());
+                java.awt.Color targetRice = isSpecial ? p.specialRice() : p.normalRice();
+                java.awt.Color targetLn = isSpecial ? p.specialLn() : p.normalLn();
 
                 col.riceColor = targetRice;
                 col.lnColor = targetLn;
@@ -424,16 +521,6 @@ public class KeymodeTab extends SplitPane {
         Label l = new Label(text);
         l.setStyle("-fx-font-size: 13px;");
         return l;
-    }
-
-    private TextField stringField(String initial, java.util.function.Consumer<String> setter) {
-        TextField tf = new TextField(initial == null ? "" : initial);
-        tf.setPrefWidth(180);
-        tf.textProperty().addListener((obs, old, val) -> {
-            setter.accept(val.trim().isEmpty() ? null : val.trim());
-            requestRedraw();
-        });
-        return tf;
     }
 
     private TextField intField(int initial, int min, int max, java.util.function.IntConsumer setter) {

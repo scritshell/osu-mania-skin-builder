@@ -4,11 +4,15 @@ import com.osumania.skinbuilder.core.ManiaKeyConfig;
 import com.osumania.skinbuilder.core.SkinAssetResolver;
 import com.osumania.skinbuilder.core.SkinConfig;
 import javafx.scene.image.Image;
+import javafx.scene.image.PixelBuffer;
+import javafx.scene.image.PixelFormat;
+import javafx.scene.image.WritableImage;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
+import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -21,42 +25,20 @@ import java.util.zip.ZipFile;
 
 /**
  * Gestor de caché de imágenes para PreviewCanvas.
- *
- * <h2>Estrategia de caché en dos grupos</h2>
- * <b>Notas / receptores</b>
- * <ol>
- *   <li>{@code baseBufferedCache} — imagen original sin teñir (BufferedImage).</li>
- *   <li>{@code tintedFxCache}     — versión teñida (Image JavaFX), clave {@code "nombre|RRGGBB_alpha"}.</li>
- * </ol>
- * <b>Stage images</b> (color completo, sin teñir)
- * <ol>
- *   <li>{@code stageImageFxCache} — imagen estática o primer frame de GIF.</li>
- *   <li>{@code stageGifFxCache}   — lista de frames GIF.</li>
- *   <li>{@code stageGifFpsCache}  — FPS de cada GIF.</li>
- * </ol>
  */
 public class PreviewAssetManager {
 
     private static final Logger LOG = Logger.getLogger(PreviewAssetManager.class.getName());
 
-    // ── Notas / receptores ────────────────────────────────────────────────────
     private final Map<String, BufferedImage> baseBufferedCache = new HashMap<>();
     private final Map<String, Image>         tintedFxCache     = new HashMap<>();
 
-    // ── Stage images ──────────────────────────────────────────────────────────
     private final Map<String, Image>         stageImageFxCache = new HashMap<>();
     private final Map<String, List<Image>>   stageGifFxCache   = new HashMap<>();
     private final Map<String, Integer>       stageGifFpsCache  = new HashMap<>();
 
-    // =========================================================================
-    // Carga desde .osk / carpeta
-    // =========================================================================
-
     public void loadAssetsFromOsk(Path sourcePath, SkinConfig config) {
-        if (sourcePath == null || config == null) {
-            LOG.warning("sourcePath o config es null");
-            return;
-        }
+        if (sourcePath == null || config == null) return;
         clear();
         try {
             if (Files.isRegularFile(sourcePath)) {
@@ -69,11 +51,8 @@ public class PreviewAssetManager {
         } catch (Exception e) {
             LOG.warning("Error cargando assets: " + e.getMessage());
         }
-        LOG.info("Assets cargados → notas base: " + baseBufferedCache.size()
-                + "  stage: " + stageImageFxCache.size());
+        LOG.info("Assets cargados → notas base: " + baseBufferedCache.size() + "  stage: " + stageImageFxCache.size());
     }
-
-    // ---- ZIP ----------------------------------------------------------------
 
     private void loadFromZip(Path oskPath, SkinConfig config) throws Exception {
         try (ZipFile zip = new ZipFile(oskPath.toFile())) {
@@ -86,8 +65,7 @@ public class PreviewAssetManager {
         }
     }
 
-    private void loadNoteAssetsFromZip(ZipFile zip, ManiaKeyConfig km,
-                                       Map<String, String> lookupMap) {
+    private void loadNoteAssetsFromZip(ZipFile zip, ManiaKeyConfig km, Map<String, String> lookupMap) {
         for (ManiaKeyConfig.ColumnConfig col : km.getColumns()) {
             loadBaseImageFromZip(zip, lookupMap, col.noteImageRice);
             loadBaseImageFromZip(zip, lookupMap, col.noteImageLnHead);
@@ -99,18 +77,15 @@ public class PreviewAssetManager {
         }
     }
 
-    private void loadStageImagesFromZip(ZipFile zip, ManiaKeyConfig km,
-                                        Map<String, String> lookupMap) {
+    private void loadStageImagesFromZip(ZipFile zip, ManiaKeyConfig km, Map<String, String> lookupMap) {
         loadStageImageFromZip(zip, lookupMap, km.getStageHintImage());
         loadStageImageFromZip(zip, lookupMap, km.getStageLeftImage());
         loadStageImageFromZip(zip, lookupMap, km.getStageRightImage());
         loadStageImageFromZip(zip, lookupMap, km.getStageBottomImage());
     }
 
-    private void loadBaseImageFromZip(ZipFile zip, Map<String, String> lookupMap,
-                                      String imageName) {
+    private void loadBaseImageFromZip(ZipFile zip, Map<String, String> lookupMap, String imageName) {
         if (imageName == null || imageName.isBlank()) return;
-
         SkinAssetResolver.findEntry(imageName, lookupMap).ifPresent(entry -> {
             if (!baseBufferedCache.containsKey(imageName)) {
                 try { ZipEntry ze = zip.getEntry(entry);
@@ -120,10 +95,9 @@ public class PreviewAssetManager {
                             if (img != null) baseBufferedCache.put(imageName, img);
                         }
                     }
-                } catch (Exception e) { LOG.warning("base-zip '" + imageName + "': " + e.getMessage()); }
+                } catch (Exception e) {}
             }
         });
-
         String hdName = imageName + SkinAssetResolver.HD_SUFFIX;
         SkinAssetResolver.findEntryHd(imageName, lookupMap).ifPresent(entry -> {
             if (!baseBufferedCache.containsKey(hdName)) {
@@ -134,13 +108,12 @@ public class PreviewAssetManager {
                             if (img != null) baseBufferedCache.put(hdName, img);
                         }
                     }
-                } catch (Exception e) { LOG.warning("HD-zip '" + hdName + "': " + e.getMessage()); }
+                } catch (Exception e) {}
             }
         });
     }
 
-    private void loadStageImageFromZip(ZipFile zip, Map<String, String> lookupMap,
-                                       String imageName) {
+    private void loadStageImageFromZip(ZipFile zip, Map<String, String> lookupMap, String imageName) {
         if (imageName == null || imageName.isBlank() || stageImageFxCache.containsKey(imageName)) return;
         SkinAssetResolver.findEntry(imageName, lookupMap).ifPresent(entry -> {
             try { ZipEntry ze = zip.getEntry(entry);
@@ -150,19 +123,14 @@ public class PreviewAssetManager {
                         if (img != null) stageImageFxCache.put(imageName, toFxImage(img));
                     }
                 }
-            } catch (Exception e) { LOG.warning("stage-zip '" + imageName + "': " + e.getMessage()); }
+            } catch (Exception e) {}
         });
     }
-
-    // ---- Directorio ---------------------------------------------------------
 
     private void loadFromDirectory(Path dirPath, SkinConfig config) throws Exception {
         List<String> files = new ArrayList<>();
         try (var stream = Files.walk(dirPath)) {
-            stream.filter(Files::isRegularFile)
-                    .map(dirPath::relativize)
-                    .map(Path::toString)
-                    .forEach(files::add);
+            stream.filter(Files::isRegularFile).map(dirPath::relativize).map(Path::toString).forEach(files::add);
         }
         Map<String, String> lookupMap = SkinAssetResolver.buildLookupMap(files);
         for (ManiaKeyConfig km : config.getKeymodes()) {
@@ -171,8 +139,7 @@ public class PreviewAssetManager {
         }
     }
 
-    private void loadNoteAssetsFromDirectory(Path dirPath, ManiaKeyConfig km,
-                                             Map<String, String> lookupMap) {
+    private void loadNoteAssetsFromDirectory(Path dirPath, ManiaKeyConfig km, Map<String, String> lookupMap) {
         for (ManiaKeyConfig.ColumnConfig col : km.getColumns()) {
             loadBaseImageFromDirectory(dirPath, lookupMap, col.noteImageRice);
             loadBaseImageFromDirectory(dirPath, lookupMap, col.noteImageLnHead);
@@ -184,18 +151,15 @@ public class PreviewAssetManager {
         }
     }
 
-    private void loadStageImagesFromDirectory(Path dirPath, ManiaKeyConfig km,
-                                              Map<String, String> lookupMap) {
+    private void loadStageImagesFromDirectory(Path dirPath, ManiaKeyConfig km, Map<String, String> lookupMap) {
         loadStageImageFromDirectory(dirPath, lookupMap, km.getStageHintImage());
         loadStageImageFromDirectory(dirPath, lookupMap, km.getStageLeftImage());
         loadStageImageFromDirectory(dirPath, lookupMap, km.getStageRightImage());
         loadStageImageFromDirectory(dirPath, lookupMap, km.getStageBottomImage());
     }
 
-    private void loadBaseImageFromDirectory(Path dirPath, Map<String, String> lookupMap,
-                                            String imageName) {
+    private void loadBaseImageFromDirectory(Path dirPath, Map<String, String> lookupMap, String imageName) {
         if (imageName == null || imageName.isBlank()) return;
-
         SkinAssetResolver.findEntry(imageName, lookupMap).ifPresent(entry -> {
             if (!baseBufferedCache.containsKey(imageName)) {
                 try { Path fp = dirPath.resolve(entry);
@@ -205,10 +169,9 @@ public class PreviewAssetManager {
                             if (img != null) baseBufferedCache.put(imageName, img);
                         }
                     }
-                } catch (Exception e) { LOG.warning("base-dir '" + imageName + "': " + e.getMessage()); }
+                } catch (Exception e) {}
             }
         });
-
         String hdName = imageName + SkinAssetResolver.HD_SUFFIX;
         SkinAssetResolver.findEntryHd(imageName, lookupMap).ifPresent(entry -> {
             if (!baseBufferedCache.containsKey(hdName)) {
@@ -219,13 +182,12 @@ public class PreviewAssetManager {
                             if (img != null) baseBufferedCache.put(hdName, img);
                         }
                     }
-                } catch (Exception e) { LOG.warning("HD-dir '" + hdName + "': " + e.getMessage()); }
+                } catch (Exception e) {}
             }
         });
     }
 
-    private void loadStageImageFromDirectory(Path dirPath, Map<String, String> lookupMap,
-                                             String imageName) {
+    private void loadStageImageFromDirectory(Path dirPath, Map<String, String> lookupMap, String imageName) {
         if (imageName == null || imageName.isBlank() || stageImageFxCache.containsKey(imageName)) return;
         SkinAssetResolver.findEntry(imageName, lookupMap).ifPresent(entry -> {
             try { Path fp = dirPath.resolve(entry);
@@ -235,24 +197,15 @@ public class PreviewAssetManager {
                         if (img != null) stageImageFxCache.put(imageName, toFxImage(img));
                     }
                 }
-            } catch (Exception e) { LOG.warning("stage-dir '" + imageName + "': " + e.getMessage()); }
+            } catch (Exception e) {}
         });
     }
 
-    // =========================================================================
-    // Stage images — API pública para imágenes añadidas por el usuario
-    // =========================================================================
-
-    /** Inyecta un PNG de stage image (sin teñir) cargado desde disco. */
     public void putStageImage(String name, BufferedImage image) {
         if (name == null || image == null) return;
         stageImageFxCache.put(name, toFxImage(image));
     }
 
-    /**
-     * Inyecta los frames de un GIF como stage image animada.
-     * El primer frame queda en {@code stageImageFxCache} para acceso estático.
-     */
     public void putStageGif(String name, List<GifFrameExtractor.GifFrame> frames) {
         if (name == null || frames == null || frames.isEmpty()) return;
         List<Image> fxFrames = new ArrayList<>(frames.size());
@@ -263,43 +216,18 @@ public class PreviewAssetManager {
         if (fxFrames.isEmpty()) return;
         stageGifFxCache.put(name, fxFrames);
         stageGifFpsCache.put(name, GifFrameExtractor.suggestFps(frames));
-        stageImageFxCache.put(name, fxFrames.get(0));   // primer frame para acceso estático
+        stageImageFxCache.put(name, fxFrames.get(0));
     }
 
-    /** Imagen estática de stage (o primer frame si es GIF). */
-    public Image getStageImage(String name) {
-        return (name == null) ? null : stageImageFxCache.get(name);
-    }
+    public Image getStageImage(String name) { return (name == null) ? null : stageImageFxCache.get(name); }
+    public List<Image> getStageGifFrames(String name) { return (name == null) ? null : stageGifFxCache.get(name); }
+    public int getStageGifFps(String name) { return stageGifFpsCache.getOrDefault(name, 25); }
+    public boolean hasAnimatedStageImages() { return !stageGifFxCache.isEmpty(); }
 
-    /** Lista de frames GIF de un stage image, o null si es imagen estática. */
-    public List<Image> getStageGifFrames(String name) {
-        return (name == null) ? null : stageGifFxCache.get(name);
-    }
-
-    /** FPS del GIF (por defecto 25 si no se conoce). */
-    public int getStageGifFps(String name) {
-        if (name == null) return 25;
-        return stageGifFpsCache.getOrDefault(name, 25);
-    }
-
-    /** Devuelve true si al menos un stage image tiene frames GIF. */
-    public boolean hasAnimatedStageImages() {
-        return !stageGifFxCache.isEmpty();
-    }
-
-    // =========================================================================
-    // Tintado dinámico para notas / receptores
-    // =========================================================================
-
-    /**
-     * Devuelve la imagen {@code imageName} teñida con {@code tintColor}/alpha.
-     * Prefiere versión @2x. Resultado en sub-caché por color.
-     */
     public Image getTintedImage(String imageName, Color tintColor, int globalAlpha) {
         if (imageName == null || imageName.isBlank()) return null;
         if (tintColor == null) tintColor = Color.WHITE;
 
-        // HD primero
         String hdName = imageName + SkinAssetResolver.HD_SUFFIX;
         BufferedImage hdBase = baseBufferedCache.get(hdName);
         if (hdBase != null) {
@@ -308,12 +236,11 @@ public class PreviewAssetManager {
             if (cached != null) return cached;
             try {
                 Image fx = toFxImage(ImageTinter.tint(hdBase, tintColor, globalAlpha));
-                tintedFxCache.put(key, fx);
+                if (fx != null) tintedFxCache.put(key, fx);
                 return fx;
-            } catch (Exception e) { LOG.warning("Tint HD '" + hdName + "': " + e.getMessage()); }
+            } catch (Exception e) {}
         }
 
-        // SD
         BufferedImage sdBase = baseBufferedCache.get(imageName);
         if (sdBase == null) return null;
 
@@ -322,12 +249,9 @@ public class PreviewAssetManager {
         if (cached != null) return cached;
         try {
             Image fx = toFxImage(ImageTinter.tint(sdBase, tintColor, globalAlpha));
-            tintedFxCache.put(key, fx);
+            if (fx != null) tintedFxCache.put(key, fx);
             return fx;
-        } catch (Exception e) {
-            LOG.warning("Tint SD '" + imageName + "': " + e.getMessage());
-            return null;
-        }
+        } catch (Exception e) { return null; }
     }
 
     private static String colorKey(Color c, int alpha) {
@@ -335,21 +259,38 @@ public class PreviewAssetManager {
     }
 
     // =========================================================================
-    // Conversión y utilidades
+    // FIX 1 DE CLAUDE (IntBuffer.wrap + Premultiplication)
     // =========================================================================
 
     private Image toFxImage(BufferedImage src) {
-        if (src == null) return null;
-        javafx.scene.image.WritableImage wi =
-                new javafx.scene.image.WritableImage(src.getWidth(), src.getHeight());
-        javafx.scene.image.PixelWriter pw = wi.getPixelWriter();
-        for (int y = 0; y < src.getHeight(); y++)
-            for (int x = 0; x < src.getWidth(); x++)
-                pw.setArgb(x, y, src.getRGB(x, y));
-        return wi;
+        if (src == null || src.getWidth() <= 0 || src.getHeight() <= 0) return null;
+        try {
+            int w = src.getWidth();
+            int h = src.getHeight();
+            int[] pixels = src.getRGB(0, 0, w, h, null, 0, w);
+            // Premultiply alpha — required by PixelFormat.getIntArgbPreInstance()
+            for (int i = 0; i < pixels.length; i++) {
+                int argb = pixels[i];
+                int a = (argb >>> 24) & 0xFF;
+                if (a == 255 || a == 0) continue; // no-op for opaque/fully transparent
+                int r = (argb >>> 16) & 0xFF;
+                int g = (argb >>> 8)  & 0xFF;
+                int b =  argb         & 0xFF;
+                r = (r * a + 127) / 255;
+                g = (g * a + 127) / 255;
+                b = (b * a + 127) / 255;
+                pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+            IntBuffer buffer = IntBuffer.wrap(pixels);
+            PixelBuffer<IntBuffer> pixelBuffer =
+                    new PixelBuffer<>(w, h, buffer, PixelFormat.getIntArgbPreInstance());
+            return new WritableImage(pixelBuffer);
+        } catch (Exception e) {
+            LOG.warning("toFxImage (PixelBuffer): " + e.getMessage());
+            return null;
+        }
     }
 
-    /** Limpia todas las cachés. */
     public void clear() {
         baseBufferedCache.clear();
         tintedFxCache.clear();

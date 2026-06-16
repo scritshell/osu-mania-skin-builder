@@ -66,54 +66,72 @@ public class PreviewCanvas extends Canvas {
 
     public void drawPreview(ManiaKeyConfig config) {
         this.lastConfig = config;
+        GraphicsContext gc    = getGraphicsContext2D();
+        double          width = getWidth();
+        double          height= getHeight();
 
-        GraphicsContext gc = getGraphicsContext2D();
-        double width  = getWidth();
-        double height = getHeight();
-
-        // Fondo exterior del canvas
         gc.setFill(Color.rgb(18, 20, 24));
         gc.fillRect(0, 0, width, height);
 
         if (config == null || config.getColumns().isEmpty()) return;
 
-        double stageTop    = 24;
-        double stageBottom = 28;
-        double stageHeight = Math.max(120, height - stageTop - stageBottom);
+        // Reservar espacio para StageLeft/Right a ambos lados del stage
+        final double SIDE_RESERVE = 58;
+        final double TOP_MARGIN   = 8;
+        final double BOT_MARGIN   = 8;
+
+        double availableW  = Math.max(40, width  - SIDE_RESERVE * 2);
+        double stageHeight = Math.max(120, height - TOP_MARGIN - BOT_MARGIN);
+        double stageTop    = TOP_MARGIN;
 
         double stageContentWidth = calculateStageWidth(config);
-        double maxStageWidth     = Math.max(80, width - 48);
-        double scale             = Math.min(1.0, maxStageWidth / stageContentWidth);
-        double scaledStageWidth  = stageContentWidth * scale;
-        double stageX            = (width - scaledStageWidth) / 2.0;
-        double hitY              = stageTop
-                + clamp(config.getHitPosition() / OSU_PLAYFIELD_HEIGHT, 0.0, 1.0) * stageHeight;
 
-        // 1. Negro puro — fondo del stage
+        // Sin cap a 1.0 → el stage escala HACIA ARRIBA para llenar el espacio disponible
+        double scale            = Math.min(availableW / stageContentWidth, 4.0);
+        double scaledStageWidth = stageContentWidth * scale;
+
+        // Centrar el stage dentro del área disponible (excluyendo márgenes laterales)
+        double stageX = SIDE_RESERVE + (availableW - scaledStageWidth) / 2.0;
+        double hitY   = stageTop
+                + clamp(config.getHitPosition() / OSU_PLAYFIELD_HEIGHT, 0.0, 1.0)
+                * stageHeight;
+
+        // 1. Fondo negro puro del stage
         gc.setFill(Color.BLACK);
         gc.fillRect(stageX, stageTop, scaledStageWidth, stageHeight);
 
-        // 2. Paneles de borde (StageLeft, StageRight, StageBottom) — detrás de todo
+        // 2. Paneles de borde del stage (detrás de las notas)
         drawStageBorderImages(gc, config, stageX, stageTop, stageHeight, scaledStageWidth);
 
         // 3. Columnas + notas
         drawColumns(gc, config, stageX, stageTop, stageHeight, scale, hitY);
 
-        // 4. StageHint encima de las notas, en la hit line
+        // 4. StageHint encima de las notas
         drawStageHintImage(gc, config, stageX, hitY, scaledStageWidth);
 
-        // 5. Línea de hit de referencia (semitransparente si hay StageHint)
+        // 5. Línea de hit de referencia
         drawHitLine(gc, config, stageX, hitY, scaledStageWidth, scale);
+    }
+
+    // =========================================================================
+    // Utilidad de dibujo seguro (Protección contra NPE de Prism)
+    // =========================================================================
+
+    /**
+     * Wrapper seguro de gc.drawImage.
+     * JavaFX lanza NPE en el hilo de renderizado (NGCanvas.handleRenderOp) si
+     * se llama con width ≤ 0, height ≤ 0, o con una imagen en estado de error.
+     * Este método absorbe todos esos casos antes de llegar al canvas.
+     */
+    private void safeDraw(GraphicsContext gc, Image img, double x, double y, double w, double h) {
+        if (img == null || img.isError() || w < 1.0 || h < 1.0) return;
+        gc.drawImage(img, x, y, w, h);
     }
 
     // =========================================================================
     // Stage images
     // =========================================================================
 
-    /**
-     * Devuelve el frame actual de un stage image teniendo en cuenta la animación GIF.
-     * Usa System.currentTimeMillis() para calcular el índice de frame.
-     */
     private Image getCurrentStageFrame(String imageName) {
         if (assetManager == null || imageName == null) return null;
 
@@ -127,10 +145,6 @@ public class PreviewCanvas extends Canvas {
         return assetManager.getStageImage(imageName);
     }
 
-    /**
-     * Dibuja StageLeft, StageRight y StageBottom.
-     * Se llama ANTES de drawColumns para que queden detrás de las notas.
-     */
     private void drawStageBorderImages(GraphicsContext gc,
                                        ManiaKeyConfig config,
                                        double stageX,
@@ -138,44 +152,40 @@ public class PreviewCanvas extends Canvas {
                                        double stageHeight,
                                        double scaledStageWidth) {
         if (assetManager == null) return;
+        double canvasW = getWidth();
 
-        // StageLeft — panel izquierdo
+        // ── StageLeft ─────────────────────────────────────────────────────────────
         Image leftImg = getCurrentStageFrame(config.getStageLeftImage());
-        if (leftImg != null && leftImg.getWidth() > 0) {
+        if (leftImg != null && !leftImg.isError() && leftImg.getWidth() > 0 && stageX > 1) {
             double aspect = leftImg.getWidth() / leftImg.getHeight();
             double drawH  = stageHeight;
-            double drawW  = Math.min(drawH * aspect, 80);
-            gc.drawImage(leftImg, stageX - drawW, stageTop, drawW, drawH);
+            double drawW  = Math.min(stageX, drawH * aspect);
+            safeDraw(gc, leftImg, stageX - drawW, stageTop, drawW, drawH);
         }
 
-        // StageRight — panel derecho
+        // ── StageRight ────────────────────────────────────────────────────────────
         Image rightImg = getCurrentStageFrame(config.getStageRightImage());
-        if (rightImg != null && rightImg.getWidth() > 0) {
+        double rightEdge = stageX + scaledStageWidth;
+        if (rightImg != null && !rightImg.isError() && rightImg.getWidth() > 0 && rightEdge < canvasW - 1) {
             double aspect = rightImg.getWidth() / rightImg.getHeight();
             double drawH  = stageHeight;
-            double drawW  = Math.min(drawH * aspect, 80);
-            gc.drawImage(rightImg, stageX + scaledStageWidth, stageTop, drawW, drawH);
+            double drawW  = Math.min(canvasW - rightEdge, drawH * aspect);
+            safeDraw(gc, rightImg, rightEdge, stageTop, drawW, drawH);
         }
 
-        // StageBottom — banda en la parte inferior del stage
+        // ── StageBottom ───────────────────────────────────────────────────────────
         String bottomName = config.getStageBottomImage();
         if (bottomName != null) {
             Image bottomImg = getCurrentStageFrame(bottomName);
-            if (bottomImg != null && bottomImg.getWidth() > 0) {
+            if (bottomImg != null && !bottomImg.isError() && bottomImg.getWidth() > 0) {
                 double aspect = bottomImg.getWidth() / bottomImg.getHeight();
                 double drawW  = scaledStageWidth;
-                double drawH  = Math.min(drawW / aspect, stageHeight * 0.18);
-                gc.drawImage(bottomImg,
-                        stageX, stageTop + stageHeight - drawH,
-                        drawW, drawH);
+                double drawH  = Math.min(drawW / aspect, stageHeight * 0.15);
+                safeDraw(gc, bottomImg, stageX, stageTop + stageHeight - drawH, drawW, drawH);
             }
         }
     }
 
-    /**
-     * Dibuja StageHint en la hit line, ENCIMA de las notas.
-     * Ligera transparencia para no tapar completamente las notas que cruzan.
-     */
     private void drawStageHintImage(GraphicsContext gc,
                                     ManiaKeyConfig config,
                                     double stageX,
@@ -183,7 +193,7 @@ public class PreviewCanvas extends Canvas {
                                     double scaledStageWidth) {
         if (assetManager == null) return;
         Image hintImg = getCurrentStageFrame(config.getStageHintImage());
-        if (hintImg == null || hintImg.getWidth() == 0) return;
+        if (hintImg == null || hintImg.isError() || hintImg.getWidth() == 0) return;
 
         double aspect = hintImg.getWidth() / hintImg.getHeight();
         double drawW  = scaledStageWidth;
@@ -191,7 +201,7 @@ public class PreviewCanvas extends Canvas {
         double drawY  = hitY - drawH / 2.0;
 
         gc.setGlobalAlpha(0.88);
-        gc.drawImage(hintImg, stageX, drawY, drawW, drawH);
+        safeDraw(gc, hintImg, stageX, drawY, drawW, drawH);
         gc.setGlobalAlpha(1.0);
     }
 
@@ -207,14 +217,13 @@ public class PreviewCanvas extends Canvas {
                              double scale,
                              double hitY) {
         List<ManiaKeyConfig.ColumnConfig> cols = config.getColumns();
-        int   keys       = cols.size();
-        int[] lineWidths = buildLineWidths(config);
-        int   splitIndex = keys / 2;
-        double splitGap  = getSplitGap(config) * scale;
+        int    keys       = cols.size();
+        int[]  lineWidths = buildLineWidths(config);
+        int    splitIndex = keys / 2;
+        double splitGap   = getSplitGap(config) * scale;
 
         double x = stageX;
 
-        // Borde izquierdo
         double leftBorderW = lineWidths[0] * scale;
         if (leftBorderW > 0) {
             gc.setFill(Color.rgb(210, 210, 210, 0.9));
@@ -223,7 +232,6 @@ public class PreviewCanvas extends Canvas {
         }
 
         for (int i = 0; i < keys; i++) {
-            // SplitStages
             if (config.isSplitStages() && i == splitIndex) {
                 drawSplitGap(gc, x, stageTop, splitGap, stageHeight);
                 x += splitGap;
@@ -239,11 +247,10 @@ public class PreviewCanvas extends Canvas {
 
             drawColumnBackground(gc, i, x, stageTop, columnWidth, stageHeight);
             drawLongNote(gc, config, column, x, columnWidth, hitY, stageTop, stageHeight, scale);
-            drawRiceNote(gc, config, column, i, x, columnWidth, stageTop, stageHeight);
+            drawRiceNote(gc, config, column, i, x, columnWidth, stageTop, stageHeight, hitY);
 
             x += columnWidth;
 
-            // Separador / borde derecho
             double sepW = lineWidths[i + 1] * scale;
             if (sepW > 0) {
                 gc.setFill(Color.rgb(210, 210, 210, 0.9));
@@ -266,20 +273,24 @@ public class PreviewCanvas extends Canvas {
                               double columnX,
                               double columnWidth,
                               double stageTop,
-                              double stageHeight) {
+                              double stageHeight,
+                              double hitY) {
         double notePadding = Math.max(2, columnWidth * 0.12);
         double noteHeight  = Math.max(8, Math.min(22, stageHeight * 0.045));
-        double y           = stageTop + stageHeight * (0.16 + (columnIndex % 4) * 0.075);
         double noteWidth   = columnWidth - notePadding * 2;
+
+        double distFromHit = stageHeight * (0.22 + (columnIndex % 5) * 0.08);
+        double y = Math.max(stageTop + 4, hitY - distFromHit);
 
         if (assetManager != null && column.noteImageRice != null) {
             int            alpha = config.isUseGlobalTransparency() ? config.getGlobalAlpha() : 255;
             java.awt.Color tint  = column.riceColor != null ? column.riceColor : java.awt.Color.WHITE;
             Image img = assetManager.getTintedImage(column.noteImageRice, tint, alpha);
+
             if (img != null) {
                 double imgH  = (img.getHeight() / img.getWidth()) * noteWidth;
                 double drawH = Math.min(noteHeight, imgH);
-                gc.drawImage(img, columnX + notePadding, y + (noteHeight - drawH) / 2.0, noteWidth, drawH);
+                safeDraw(gc, img, columnX + notePadding, y + (noteHeight - drawH) / 2.0, noteWidth, drawH);
                 return;
             }
         }
@@ -316,22 +327,37 @@ public class PreviewCanvas extends Canvas {
         if (assetManager != null) {
             String tailName = config.isUseSeparateLnTail() && column.noteImageLnTail != null
                     ? column.noteImageLnTail : column.noteImageLnBody;
+
+            // Tail
             if (tailName != null) {
-                Image t = assetManager.getTintedImage(tailName, lnTint, alpha);
-                if (t != null) { gc.drawImage(t, columnX + notePadding, visibleY, bodyWidth,
-                        Math.min(headHeight, (t.getHeight() / t.getWidth()) * bodyWidth)); usedImages = true; }
+                Image tailImg = assetManager.getTintedImage(tailName, lnTint, alpha);
+                if (tailImg != null) {
+                    double h = (tailImg.getHeight() / tailImg.getWidth()) * bodyWidth;
+                    safeDraw(gc, tailImg, columnX + notePadding, visibleY, bodyWidth, Math.min(headHeight, h));
+                    usedImages = true;
+                }
             }
+
+            // Body
             if (column.noteImageLnBody != null) {
-                Image b = assetManager.getTintedImage(column.noteImageLnBody, lnTint, alpha);
-                if (b != null) { gc.drawImage(b, columnX + notePadding, bodyStartY, bodyWidth,
-                        Math.max(1, bodyHeight - 2 * headHeight)); usedImages = true; }
+                Image bodyImg = assetManager.getTintedImage(column.noteImageLnBody, lnTint, alpha);
+                if (bodyImg != null) {
+                    safeDraw(gc, bodyImg, columnX + notePadding, bodyStartY, bodyWidth, Math.max(1, bodyHeight - 2 * headHeight));
+                    usedImages = true;
+                }
             }
+
+            // Head
             if (column.noteImageLnHead != null) {
-                Image h = assetManager.getTintedImage(column.noteImageLnHead, lnTint, alpha);
-                if (h != null) { gc.drawImage(h, columnX + notePadding, headY, bodyWidth,
-                        Math.min(headHeight, (h.getHeight() / h.getWidth()) * bodyWidth)); usedImages = true; }
+                Image headImg = assetManager.getTintedImage(column.noteImageLnHead, lnTint, alpha);
+                if (headImg != null) {
+                    double h = (headImg.getHeight() / headImg.getWidth()) * bodyWidth;
+                    safeDraw(gc, headImg, columnX + notePadding, headY, bodyWidth, Math.min(headHeight, h));
+                    usedImages = true;
+                }
             }
         }
+
         if (!usedImages) {
             gc.setFill(toFxColor(column.lnColor, 0.58));
             gc.fillRect(columnX + notePadding, visibleY, bodyWidth, visibleH);
@@ -368,7 +394,6 @@ public class PreviewCanvas extends Canvas {
 
     private void drawHitLine(GraphicsContext gc, ManiaKeyConfig config,
                              double stageX, double hitY, double stageWidth, double scale) {
-        // Si hay StageHint visible, la línea es más sutil
         boolean hasHint = assetManager != null
                 && assetManager.getStageImage(config.getStageHintImage()) != null;
         double adjusted = hitY + config.getReceptorOffset() * scale;

@@ -8,40 +8,52 @@ import javafx.scene.paint.Color;
 import java.util.Random;
 
 /**
- * Canvas que dibuja y anima una constelación de partículas flotantes conectadas
- * por líneas semitransparentes. Se usa como fondo decorativo en GeneralTab y KeymodeTab.
+ * Canvas de constelaciones animado — decoración ambient.
  *
- * <p>Se redimensiona automáticamente al contenedor gracias a {@link #isResizable()}.</p>
+ * <p>Diseñado para usarse como capa de fondo en un StackPane, con el
+ * contenido real encima. Nunca debe tapar controles. Las partículas y líneas
+ * son deliberadamente tenues para no competir con el UI.</p>
+ *
+ * <h2>Uso correcto</h2>
+ * <pre>
+ *   ConstellationCanvas bg = new ConstellationCanvas(45, 140, 0.28);
+ *   bg.widthProperty().bind(container.widthProperty());
+ *   bg.heightProperty().bind(container.heightProperty());
+ *   bg.setMouseTransparent(true);
+ *
+ *   StackPane pane = new StackPane(bg, myContent);
+ * </pre>
  */
 public class ConstellationCanvas extends Canvas {
 
-    // ── Config ────────────────────────────────────────────────────────────────
+    // ── Configuración ─────────────────────────────────────────────────────────
     private final int    count;
     private final double maxDist;
     private final double maxLineAlpha;
     private final double speed;
 
-    // ── State ─────────────────────────────────────────────────────────────────
+    // ── Estado ────────────────────────────────────────────────────────────────
     private final double[] px, py, vx, vy;
     private final AnimationTimer timer;
     private final Random rng;
     private long lastNs = 0;
+
+    // ── Color base de las partículas (azul osu!) ──────────────────────────────
+    private static final double CR = 0.20;
+    private static final double CG = 0.45;
+    private static final double CB = 0.90;
 
     // =========================================================================
     // Constructores
     // =========================================================================
 
     /**
-     * Constructor completo.
-     *
-     * @param count        Número de partículas (ej. 55 para GeneralTab, 28 para KeymodeTab)
-     * @param maxDist      Distancia máxima para trazar línea entre partículas
-     * @param maxLineAlpha Opacidad máxima de las líneas (0.0–1.0)
-     * @param speed        Velocidad de desplazamiento en px/ms
-     * @param seed         Semilla para reproducibilidad; usa {@code System.nanoTime()} para aleatoriedad
+     * @param count        Número de partículas. 40–60 para pantalla completa, 20–30 para paneles.
+     * @param maxDist      Distancia máxima para trazar línea (px). Recomendado: 120–160.
+     * @param maxLineAlpha Opacidad máxima de líneas [0–1]. Mantener ≤ 0.30 para no tapar UI.
+     * @param speed        Velocidad de movimiento en px/ms. 0.12–0.22 es casi imperceptible.
      */
-    public ConstellationCanvas(int count, double maxDist, double maxLineAlpha,
-                               double speed, long seed) {
+    public ConstellationCanvas(int count, double maxDist, double maxLineAlpha, double speed) {
         this.count        = count;
         this.maxDist      = maxDist;
         this.maxLineAlpha = maxLineAlpha;
@@ -51,16 +63,15 @@ public class ConstellationCanvas extends Canvas {
         py  = new double[count];
         vx  = new double[count];
         vy  = new double[count];
-        rng = new Random(seed);
+        rng = new Random();
 
         scatter(900, 640);
 
-        widthProperty().addListener((o, oldW, newW) -> clamp());
-        heightProperty().addListener((o, oldH, newH) -> clamp());
+        widthProperty().addListener((o, ov, nv)  -> clampPositions());
+        heightProperty().addListener((o, ov, nv) -> clampPositions());
 
         timer = new AnimationTimer() {
-            @Override
-            public void handle(long now) {
+            @Override public void handle(long now) {
                 if (lastNs == 0) { lastNs = now; return; }
                 double dt = Math.min((now - lastNs) / 1_000_000.0, 50.0);
                 lastNs = now;
@@ -71,22 +82,17 @@ public class ConstellationCanvas extends Canvas {
         timer.start();
     }
 
-    /** Variante sin semilla fija (usa System.nanoTime). */
-    public ConstellationCanvas(int count, double maxDist, double maxLineAlpha, double speed) {
-        this(count, maxDist, maxLineAlpha, speed, System.nanoTime());
-    }
-
-    /** Variante con velocidad por defecto (0.22 px/ms). */
+    /** Variante con velocidad por defecto (0.15 px/ms — muy sutil). */
     public ConstellationCanvas(int count, double maxDist, double maxLineAlpha) {
-        this(count, maxDist, maxLineAlpha, 0.22, System.nanoTime());
+        this(count, maxDist, maxLineAlpha, 0.15);
     }
 
     // =========================================================================
     // Lifecycle
     // =========================================================================
 
-    public void stopAnimation()  { timer.stop(); }
-    public void startAnimation() { lastNs = 0; timer.start(); }
+    public void stop()  { timer.stop(); }
+    public void start() { lastNs = 0; timer.start(); }
 
     // =========================================================================
     // Partículas
@@ -102,7 +108,7 @@ public class ConstellationCanvas extends Canvas {
         }
     }
 
-    private void clamp() {
+    private void clampPositions() {
         double w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
         for (int i = 0; i < count; i++) {
@@ -134,43 +140,46 @@ public class ConstellationCanvas extends Canvas {
 
         GraphicsContext g = getGraphicsContext2D();
 
-        // Fondo oscuro
+        // Fondo — azul noche muy oscuro
         g.setFill(Color.rgb(6, 9, 18));
         g.fillRect(0, 0, w, h);
 
-        // Líneas entre partículas cercanas
-        g.setLineWidth(0.65);
+        // Líneas entre partículas cercanas — muy tenues
+        g.setLineWidth(0.6);
         for (int i = 0; i < count; i++) {
             for (int j = i + 1; j < count; j++) {
                 double dx = px[i] - px[j];
                 double dy = py[i] - py[j];
                 double d  = Math.sqrt(dx * dx + dy * dy);
                 if (d < maxDist) {
-                    double a = maxLineAlpha * (1.0 - d / maxDist);
-                    g.setStroke(Color.color(0.22, 0.52, 0.90, a));
+                    double alpha = maxLineAlpha * (1.0 - d / maxDist);
+                    g.setStroke(Color.color(CR, CG, CB, alpha));
                     g.strokeLine(px[i], py[i], px[j], py[j]);
                 }
             }
         }
 
-        // Partículas con efecto glow en 3 capas
+        // Partículas: glow suave en 3 capas
         for (int i = 0; i < count; i++) {
             double x = px[i], y = py[i];
-            g.setFill(Color.color(0.24, 0.52, 1.0, 0.07));
-            g.fillOval(x - 9,   y - 9,   18,  18);
-            g.setFill(Color.color(0.38, 0.66, 1.0, 0.22));
-            g.fillOval(x - 3.8, y - 3.8,  7.6, 7.6);
-            g.setFill(Color.color(0.80, 0.92, 1.0, 0.94));
-            g.fillOval(x - 1.7, y - 1.7,  3.4, 3.4);
+            // capa exterior difusa
+            g.setFill(Color.color(CR, CG, CB, 0.05));
+            g.fillOval(x - 8, y - 8, 16, 16);
+            // halo medio
+            g.setFill(Color.color(CR + 0.15, CG + 0.20, CB, 0.18));
+            g.fillOval(x - 3.5, y - 3.5, 7, 7);
+            // núcleo brillante
+            g.setFill(Color.color(0.78, 0.90, 1.0, 0.88));
+            g.fillOval(x - 1.5, y - 1.5, 3, 3);
         }
     }
 
     // =========================================================================
-    // Layout — el canvas se redimensiona automáticamente con el contenedor
+    // Resizable
     // =========================================================================
 
-    @Override public boolean isResizable()              { return true; }
-    @Override public double  prefWidth(double h)        { return 400;  }
-    @Override public double  prefHeight(double w)       { return 300;  }
+    @Override public boolean isResizable()            { return true; }
+    @Override public double  prefWidth(double height) { return 0; }
+    @Override public double  prefHeight(double width) { return 0; }
     @Override public void    resize(double w, double h) { setWidth(w); setHeight(h); }
 }

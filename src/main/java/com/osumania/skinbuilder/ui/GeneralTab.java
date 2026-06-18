@@ -9,10 +9,12 @@ import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.LinearGradient;
+import javafx.scene.paint.Stop;
+import javafx.scene.paint.CycleMethod;
+import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
-import javafx.scene.text.Text;
-import javafx.scene.text.TextAlignment;
 import javafx.stage.FileChooser;
 
 import java.io.File;
@@ -20,33 +22,41 @@ import java.nio.file.Path;
 import java.util.stream.Collectors;
 
 /**
- * Pestaña General con fondo de constelaciones animadas (dark theme).
+ * Pestaña General — rediseño limpio.
  *
- * <h2>Antes de importar</h2>
- * Muestra la pantalla de bienvenida sobre el fondo de constelaciones.
- *
- * <h2>Después de importar</h2>
- * Metadatos, panel de keymodes y exportación; el fondo de constelaciones
- * sigue visible detrás del contenido.
+ * <p>La constelación es la capa más baja del StackPane; el contenido
+ * (tarjeta semitransparente centrada) está encima y nunca se solapa.</p>
  */
 public class GeneralTab extends StackPane {
 
+    // ── Paleta ────────────────────────────────────────────────────────────────
+    // Fondo panel: rgba(10,16,32,0.88)  Borde: #1A3060  Acento: #4A8FFF
+    // Texto primario: #C8DCFF  Texto secundario: #4A6890  Éxito: #3EC87A  Error: #E05050
+
+    private static final String PANEL_BG     = "rgba(10,16,32,0.90)";
+    private static final String PANEL_BORDER  = "#182848";
+    private static final String TEXT_PRIMARY  = "#C8DCFF";
+    private static final String TEXT_SECONDARY= "#4A6890";
+    private static final String TEXT_ACCENT   = "#4A8FFF";
+    private static final String BTN_IMPORT    = "linear-gradient(to bottom, #1E4AD0, #1638A0)";
+    private static final String BTN_FOLDER    = "linear-gradient(to bottom, #1A3880, #122868)";
+    private static final String BTN_EXPORT    = "linear-gradient(to bottom, #1A5038, #123828)";
+    private static final String BTN_ADD       = "linear-gradient(to bottom, #1A4848, #0E3030)";
+
+    // ── Refs UI ───────────────────────────────────────────────────────────────
     private final MainWindow mainWindow;
 
-    // ── Secciones ─────────────────────────────────────────────────────────────
     private final VBox welcomeSection;
     private final VBox skinInfoSection;
     private final VBox addKeymodeSection;
     private final VBox exportSection;
 
-    // ── Campos ────────────────────────────────────────────────────────────────
-    private final TextField skinNameField     = new TextField();
-    private final TextField skinAuthorField   = new TextField();
-    private final Label     skinVersionLabel  = new Label("—");
+    private final TextField skinNameField        = new TextField();
+    private final TextField skinAuthorField      = new TextField();
+    private final Label     skinVersionLabel     = new Label("—");
     private final Label     detectedKeymodesLabel = new Label("—");
-    private final ComboBox<String> keymodeCombo = new ComboBox<>();
+    private final ComboBox<String> keymodeCombo  = new ComboBox<>();
 
-    // ── Export ────────────────────────────────────────────────────────────────
     private Label       exportStatusLabel;
     private ProgressBar exportProgressBar;
     private Task<Void>  exportTask;
@@ -60,227 +70,212 @@ public class GeneralTab extends StackPane {
     public GeneralTab(MainWindow mainWindow) {
         this.mainWindow = mainWindow;
 
-        // ── Fondo de constelaciones (capa 0) ─────────────────────────────────
-        ConstellationCanvas stars = new ConstellationCanvas(60, 160, 0.55, 0.18);
+        // ── Capa 0: constelaciones ────────────────────────────────────────────
+        // isResizable()=true → el StackPane llama a resize() automáticamente.
+        // NO usar bind(): colisiona con resize() y lanza BoundValue exception.
+        ConstellationCanvas stars = new ConstellationCanvas(50, 145, 0.25, 0.14);
         stars.setMouseTransparent(true);
-        // El canvas se redimensiona con el StackPane
-        stars.widthProperty().bind(widthProperty());
-        stars.heightProperty().bind(heightProperty());
 
-        // ── Contenido desplazable (capa 1) ───────────────────────────────────
+        // ── Capa 1: contenido desplazable ─────────────────────────────────────
         welcomeSection    = buildWelcomeSection();
         skinInfoSection   = buildSkinInfoSection();
         addKeymodeSection = buildAddKeymodeSection();
         exportSection     = buildExportSection();
 
-        setVisible(skinInfoSection,   false);
-        setVisible(addKeymodeSection, false);
-        setVisible(exportSection,     false);
+        hide(skinInfoSection);
+        hide(addKeymodeSection);
+        hide(exportSection);
 
-        VBox content = new VBox(28);
-        content.setPadding(new Insets(36, 44, 36, 44));
+        VBox content = new VBox(20);
+        content.setPadding(new Insets(32, 40, 32, 40));
         content.getChildren().addAll(
                 welcomeSection, skinInfoSection, addKeymodeSection, exportSection);
 
         ScrollPane scroll = new ScrollPane(content);
         scroll.setFitToWidth(true);
-        scroll.setStyle("-fx-background-color: transparent; -fx-border-color: transparent;");
-        scroll.getStyleClass().add("constellation-scroll");
+        scroll.setStyle(
+                "-fx-background: transparent;" +
+                        "-fx-background-color: transparent;" +
+                        "-fx-border-color: transparent;");
 
         getChildren().addAll(stars, scroll);
     }
 
     // =========================================================================
-    // Secciones
+    // Sección bienvenida
     // =========================================================================
 
-    // ── Bienvenida ────────────────────────────────────────────────────────────
-
     private VBox buildWelcomeSection() {
-        VBox card = new VBox(22);
+        // Tarjeta central con glassmorphism leve
+        VBox card = new VBox(20);
         card.setAlignment(Pos.CENTER);
-        card.setMaxWidth(560);
+        card.setMaxWidth(500);
         card.setStyle(
-                "-fx-background-color: rgba(8,15,32,0.82);" +
-                        "-fx-background-radius: 18;" +
-                        "-fx-border-color: #1c3060;" +
-                        "-fx-border-radius: 18;" +
+                "-fx-background-color: rgba(8,14,30,0.88);" +
+                        "-fx-background-radius: 16;" +
+                        "-fx-border-color: #1A3060;" +
+                        "-fx-border-radius: 16;" +
                         "-fx-border-width: 1;" +
-                        "-fx-padding: 44 48 40 48;" +
-                        "-fx-effect: dropshadow(gaussian,rgba(0,10,40,0.7),28,0,0,6);"
-        );
+                        "-fx-padding: 40 44 36 44;" +
+                        "-fx-effect: dropshadow(gaussian, rgba(0,8,30,0.75), 32, 0, 0, 8);");
 
-        // Título con gradiente simulado via estilos
+        // Título principal
         Label title = new Label("osu!mania Skin Builder");
-        title.setFont(Font.font("System", FontWeight.BOLD, 28));
-        title.setStyle("-fx-text-fill: #9ec4ff;");
+        title.setFont(Font.font("System", FontWeight.BOLD, 26));
+        title.setStyle("-fx-text-fill: " + TEXT_PRIMARY + ";");
 
-        Label version = new Label("v1.0  ·  Step 3 UI");
-        version.setStyle("-fx-text-fill: #3a5a90; -fx-font-size: 11px;");
+        Label subtitle = new Label("Crea y exporta skins para todos los keymodes");
+        subtitle.setStyle("-fx-text-fill: " + TEXT_SECONDARY + "; -fx-font-size: 13px;");
 
-        Separator sep = new Separator();
-        sep.setStyle("-fx-background-color: #1a3060; -fx-padding: 0;");
+        // Separador
+        Region sep = new Region();
+        sep.setMinHeight(1);
+        sep.setMaxHeight(1);
+        sep.setPrefHeight(1);
+        sep.setStyle("-fx-background-color: #182848;");
+        VBox.setMargin(sep, new Insets(4, 0, 4, 0));
 
-        Text subtitle = new Text(
-                "Importa una skin .osk para empezar.\n" +
-                        "El programa detectará los keymodes y creará\n" +
-                        "las pestañas de edición automáticamente."
-        );
-        subtitle.setFill(Color.web("#7a96c0"));
-        subtitle.setTextAlignment(TextAlignment.CENTER);
-        subtitle.setStyle("-fx-font-size: 13px;");
+        Label instructions = new Label(
+                "Importa un archivo .osk o una carpeta para empezar.\n" +
+                        "El skin.ini se leerá automáticamente.");
+        instructions.setWrapText(true);
+        instructions.setStyle("-fx-text-fill: " + TEXT_SECONDARY + "; -fx-font-size: 12px; -fx-text-alignment: center;");
 
         // Botones de importar
-        Button importFileBtn = new Button("📦  Importar archivo (.osk)");
-        styleButton(importFileBtn, "#1a4abf", "#2258d8", "#d8eaff");
-
-        Button importFolderBtn = new Button("📁  Importar carpeta");
-        styleButton(importFolderBtn, "#1e3d80", "#2750a8", "#c0d8ff");
-
-        importFileBtn.setOnAction(e -> mainWindow.importOsk());
+        Button importFileBtn   = buildBtn("📦  Importar .osk", BTN_IMPORT);
+        Button importFolderBtn = buildBtn("📁  Importar carpeta", BTN_FOLDER);
+        importFileBtn.setOnAction(e   -> mainWindow.importOsk());
         importFolderBtn.setOnAction(e -> mainWindow.importFolder());
 
-        HBox btnRow = new HBox(16, importFileBtn, importFolderBtn);
+        HBox btnRow = new HBox(12, importFileBtn, importFolderBtn);
         btnRow.setAlignment(Pos.CENTER);
 
-        Label hint = new Label("También en  Archivo → Importar…");
-        hint.setStyle("-fx-text-fill: #2a3d60; -fx-font-size: 11px;");
-
-        card.getChildren().addAll(title, version, sep, subtitle, btnRow, hint);
+        card.getChildren().addAll(title, subtitle, sep, instructions, btnRow);
 
         HBox centered = new HBox(card);
         centered.setAlignment(Pos.CENTER);
         VBox outer = new VBox(centered);
         outer.setAlignment(Pos.TOP_CENTER);
-        outer.setPadding(new Insets(40, 0, 0, 0));
+        outer.setPadding(new Insets(32, 0, 0, 0));
         return outer;
     }
 
-    // ── Info de la skin ───────────────────────────────────────────────────────
+    // =========================================================================
+    // Sección info de la skin
+    // =========================================================================
 
     private VBox buildSkinInfoSection() {
-        VBox section = new VBox(12);
-        section.setMaxWidth(640);
+        VBox section = new VBox(10);
+        section.setMaxWidth(580);
 
-        Label header = sectionHeader("Skin importada");
+        section.getChildren().add(sectionHeader("Skin importada"));
 
         GridPane grid = new GridPane();
-        grid.setHgap(18);
-        grid.setVgap(12);
+        grid.setHgap(16);
+        grid.setVgap(10);
         grid.setPadding(new Insets(18));
-        grid.setStyle(
-                "-fx-background-color: rgba(8,15,32,0.86);" +
-                        "-fx-background-radius: 12;" +
-                        "-fx-border-color: #1a2e54;" +
-                        "-fx-border-radius: 12;"
-        );
+        grid.setStyle(panelStyle());
 
+        skinNameField.setStyle(fieldStyle());
         skinNameField.setPrefWidth(300);
         skinNameField.textProperty().addListener((obs, old, val) -> {
             SkinConfig s = mainWindow.getCurrentSkin();
             if (s != null) s.setSkinName(val);
         });
 
+        skinAuthorField.setStyle(fieldStyle());
         skinAuthorField.setPrefWidth(300);
         skinAuthorField.textProperty().addListener((obs, old, val) -> {
             SkinConfig s = mainWindow.getCurrentSkin();
             if (s != null) s.setSkinAuthor(val);
         });
 
-        skinVersionLabel.setStyle("-fx-text-fill: #7090b8; -fx-font-size: 13px;");
+        skinVersionLabel.setStyle("-fx-text-fill: " + TEXT_SECONDARY + "; -fx-font-size: 13px;");
         detectedKeymodesLabel.setStyle(
-                "-fx-text-fill: #4aae7a; -fx-font-size: 13px; -fx-font-weight: bold;");
+                "-fx-text-fill: #3EC87A; -fx-font-size: 13px; -fx-font-weight: bold;");
         detectedKeymodesLabel.setWrapText(true);
 
         int row = 0;
-        grid.add(fieldLabel("Nombre:"),          0, row); grid.add(skinNameField,          1, row++);
-        grid.add(fieldLabel("Autor:"),            0, row); grid.add(skinAuthorField,         1, row++);
-        grid.add(fieldLabel("Versión:"),          0, row); grid.add(skinVersionLabel,        1, row++);
-        grid.add(fieldLabel("Keymodes leídos:"),  0, row); grid.add(detectedKeymodesLabel,   1, row);
+        grid.add(fieldLabel("Nombre:"),         0, row); grid.add(skinNameField,         1, row++);
+        grid.add(fieldLabel("Autor:"),           0, row); grid.add(skinAuthorField,        1, row++);
+        grid.add(fieldLabel("Versión:"),         0, row); grid.add(skinVersionLabel,       1, row++);
+        grid.add(fieldLabel("Keymodes:"),        0, row); grid.add(detectedKeymodesLabel,  1, row);
 
-        section.getChildren().addAll(header, grid);
-        return section;
-    }
-
-    // ── Añadir keymode ────────────────────────────────────────────────────────
-
-    private VBox buildAddKeymodeSection() {
-        VBox section = new VBox(12);
-        section.setMaxWidth(640);
-
-        Label header = sectionHeader("Añadir keymode");
-
-        Label desc = new Label(
-                "Añade un keymode nuevo usando los assets de la skin importada.\n" +
-                        "Personaliza cada columna en la pestaña que se creará."
-        );
-        desc.setStyle("-fx-text-fill: #5a7898; -fx-font-size: 12px;");
-        desc.setWrapText(true);
-
-        for (int k : AVAILABLE_KEYS) keymodeCombo.getItems().add(k + "K");
-        keymodeCombo.setPromptText("Selecciona keymode…");
-        keymodeCombo.setPrefWidth(170);
-
-        Button addBtn = new Button("＋  Añadir pestaña");
-        styleButton(addBtn, "#1a4038", "#226050", "#a0e8d0");
-        addBtn.setOnAction(e -> addSelectedKeymode());
-
-        HBox row = new HBox(12, keymodeCombo, addBtn);
-        row.setAlignment(Pos.CENTER_LEFT);
-
-        VBox card = new VBox(12, desc, row);
-        card.setPadding(new Insets(18));
-        card.setStyle(
-                "-fx-background-color: rgba(8,15,32,0.86);" +
-                        "-fx-background-radius: 12;" +
-                        "-fx-border-color: #1a2e54;" +
-                        "-fx-border-radius: 12;"
-        );
-
-        section.getChildren().addAll(header, card);
-        return section;
-    }
-
-    // ── Exportar ──────────────────────────────────────────────────────────────
-
-    private VBox buildExportSection() {
-        VBox section = new VBox(12);
-        section.setMaxWidth(640);
-
-        Label header = sectionHeader("Exportar skin");
-
-        Label desc = new Label(
-                "Exporta un .osk completo con las imágenes tintadas y el skin.ini regenerado."
-        );
-        desc.setStyle("-fx-text-fill: #5a7898; -fx-font-size: 12px;");
-        desc.setWrapText(true);
-
-        Button exportBtn = new Button("💾  Exportar skin (.osk)");
-        styleButton(exportBtn, "#1a4028", "#206030", "#90e8b8");
-        exportBtn.setOnAction(e -> exportSkinOsk());
-
-        exportStatusLabel = new Label("");
-        exportStatusLabel.setStyle("-fx-text-fill: #5878a0; -fx-font-size: 12px;");
-
-        exportProgressBar = new ProgressBar(0);
-        exportProgressBar.setPrefWidth(Double.MAX_VALUE);
-        exportProgressBar.setVisible(false);
-
-        VBox card = new VBox(12, desc, exportBtn, exportStatusLabel, exportProgressBar);
-        card.setPadding(new Insets(18));
-        card.setStyle(
-                "-fx-background-color: rgba(8,15,32,0.86);" +
-                        "-fx-background-radius: 12;" +
-                        "-fx-border-color: #1a2e54;" +
-                        "-fx-border-radius: 12;"
-        );
-
-        section.getChildren().addAll(header, card);
+        section.getChildren().add(grid);
         return section;
     }
 
     // =========================================================================
-    // Lógica
+    // Sección añadir keymode
+    // =========================================================================
+
+    private VBox buildAddKeymodeSection() {
+        VBox section = new VBox(10);
+        section.setMaxWidth(580);
+        section.getChildren().add(sectionHeader("Añadir keymode"));
+
+        Label desc = new Label(
+                "Crea una pestaña de edición para un keymode nuevo basado en los assets importados.");
+        desc.setWrapText(true);
+        desc.setStyle("-fx-text-fill: " + TEXT_SECONDARY + "; -fx-font-size: 12px;");
+
+        for (int k : AVAILABLE_KEYS) keymodeCombo.getItems().add(k + "K");
+        keymodeCombo.setPromptText("Seleccionar…");
+        keymodeCombo.setPrefWidth(150);
+        keymodeCombo.setStyle(comboStyle());
+
+        Button addBtn = buildBtn("＋  Añadir pestaña", BTN_ADD);
+        addBtn.setOnAction(e -> addSelectedKeymode());
+
+        HBox row = new HBox(10, keymodeCombo, addBtn);
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(12, desc, row);
+        card.setPadding(new Insets(18));
+        card.setStyle(panelStyle());
+        section.getChildren().add(card);
+        return section;
+    }
+
+    // =========================================================================
+    // Sección exportar
+    // =========================================================================
+
+    private VBox buildExportSection() {
+        VBox section = new VBox(10);
+        section.setMaxWidth(580);
+        section.getChildren().add(sectionHeader("Exportar skin"));
+
+        Label desc = new Label(
+                "Genera un .osk completo con las imágenes tintadas y el skin.ini actualizado.");
+        desc.setWrapText(true);
+        desc.setStyle("-fx-text-fill: " + TEXT_SECONDARY + "; -fx-font-size: 12px;");
+
+        Button exportBtn = buildBtn("💾  Exportar skin (.osk)", BTN_EXPORT);
+        exportBtn.setOnAction(e -> exportSkinOsk());
+
+        exportStatusLabel = new Label("");
+        exportStatusLabel.setStyle("-fx-text-fill: " + TEXT_SECONDARY + "; -fx-font-size: 12px;");
+
+        exportProgressBar = new ProgressBar(0);
+        exportProgressBar.setPrefWidth(Double.MAX_VALUE);
+        exportProgressBar.setVisible(false);
+        exportProgressBar.setStyle(
+                "-fx-accent: #4A8FFF;" +
+                        "-fx-background-color: #0A1428;" +
+                        "-fx-background-radius: 4;" +
+                        "-fx-border-color: #1A3060;" +
+                        "-fx-border-radius: 4;");
+
+        VBox card = new VBox(12, desc, exportBtn, exportStatusLabel, exportProgressBar);
+        card.setPadding(new Insets(18));
+        card.setStyle(panelStyle());
+        section.getChildren().add(card);
+        return section;
+    }
+
+    // =========================================================================
+    // Lógica pública
     // =========================================================================
 
     public void onSkinLoaded(SkinConfig config) {
@@ -290,19 +285,23 @@ public class GeneralTab extends StackPane {
 
         String list = config.getKeymodes().stream()
                 .map(ManiaKeyConfig::getDisplayName)
-                .collect(Collectors.joining(", "));
+                .collect(Collectors.joining("  ·  "));
         detectedKeymodesLabel.setText(list.isEmpty() ? "Ninguno detectado" : list);
 
         keymodeCombo.getItems().clear();
         for (int k : AVAILABLE_KEYS) {
             boolean present = config.getKeymode(k).isPresent();
-            keymodeCombo.getItems().add(k + "K" + (present ? " (ya existe)" : ""));
+            keymodeCombo.getItems().add(k + "K" + (present ? " ✓" : ""));
         }
 
-        setVisible(skinInfoSection,   true);
-        setVisible(addKeymodeSection, true);
-        setVisible(exportSection,     true);
+        show(skinInfoSection);
+        show(addKeymodeSection);
+        show(exportSection);
     }
+
+    // =========================================================================
+    // Lógica interna
+    // =========================================================================
 
     private void addSelectedKeymode() {
         String sel = keymodeCombo.getValue();
@@ -319,10 +318,7 @@ public class GeneralTab extends StackPane {
 
     private void exportSkinOsk() {
         SkinConfig skin = mainWindow.getCurrentSkin();
-        if (skin == null) {
-            showError("Sin skin", "Importa una skin primero.");
-            return;
-        }
+        if (skin == null) { showError("Sin skin", "Importa una skin primero."); return; }
 
         FileChooser outFc = new FileChooser();
         outFc.setTitle("Exportar skin como .osk");
@@ -332,7 +328,7 @@ public class GeneralTab extends StackPane {
         if (outFile == null) return;
 
         FileChooser baseFc = new FileChooser();
-        baseFc.setTitle("Selecciona la skin base (.osk)");
+        baseFc.setTitle("Skin base para extraer assets (.osk)");
         baseFc.getExtensionFilters().add(new FileChooser.ExtensionFilter("osu! skin", "*.osk"));
         File baseFile = baseFc.showOpenDialog(mainWindow.getStage());
         if (baseFile == null) return;
@@ -341,13 +337,12 @@ public class GeneralTab extends StackPane {
         Path outputOskPath = outFile.toPath();
 
         exportTask = new Task<>() {
-            @Override
-            protected Void call() throws Exception {
-                updateMessage("Empaquetando skin…");
+            @Override protected Void call() throws Exception {
+                updateMessage("Empaquetando…");
                 updateProgress(0.2, 1.0);
                 OskPackager.packSkin(skin, baseOskPath, outputOskPath);
                 updateProgress(1.0, 1.0);
-                updateMessage("¡Exportación completada!");
+                updateMessage("Exportación completada");
                 return null;
             }
         };
@@ -359,8 +354,8 @@ public class GeneralTab extends StackPane {
         exportTask.setOnSucceeded(e -> {
             exportProgressBar.setVisible(false);
             exportStatusLabel.textProperty().unbind();
-            exportStatusLabel.setStyle("-fx-text-fill: #4aae7a; -fx-font-size: 12px;");
-            exportStatusLabel.setText("✓ Exportada: " + outFile.getAbsolutePath());
+            exportStatusLabel.setStyle("-fx-text-fill: #3EC87A; -fx-font-size: 12px;");
+            exportStatusLabel.setText("✓ Guardada en: " + outFile.getName());
             new Alert(Alert.AlertType.INFORMATION,
                     "Skin exportada:\n" + outFile.getAbsolutePath(), ButtonType.OK).showAndWait();
         });
@@ -368,57 +363,80 @@ public class GeneralTab extends StackPane {
         exportTask.setOnFailed(e -> {
             exportProgressBar.setVisible(false);
             exportStatusLabel.textProperty().unbind();
-            exportStatusLabel.setStyle("-fx-text-fill: #d04040; -fx-font-size: 12px;");
-            exportStatusLabel.setText("✗ Error en la exportación");
-            showError("Error de exportación", exportTask.getException().getMessage());
+            exportStatusLabel.setStyle("-fx-text-fill: #E05050; -fx-font-size: 12px;");
+            exportStatusLabel.setText("✗ Error: " + exportTask.getException().getMessage());
         });
 
-        Thread t = new Thread(exportTask, "OskExporterThread");
+        Thread t = new Thread(exportTask, "osk-export");
         t.setDaemon(true);
         t.start();
     }
 
     // =========================================================================
-    // Helpers
+    // Helpers de estilo
     // =========================================================================
 
-    private static void styleButton(Button btn, String bgNormal, String bgHover, String textColor) {
-        String base = String.format(
-                "-fx-background-color: %s;" +
-                        "-fx-text-fill: %s;" +
-                        "-fx-font-size: 13px;" +
-                        "-fx-font-weight: bold;" +
-                        "-fx-padding: 11 26;" +
-                        "-fx-background-radius: 9;" +
-                        "-fx-border-color: transparent;" +
-                        "-fx-cursor: hand;",
-                bgNormal, textColor);
+    private static String panelStyle() {
+        return  "-fx-background-color: rgba(8,14,30,0.88);" +
+                "-fx-background-radius: 10;" +
+                "-fx-border-color: #182848;" +
+                "-fx-border-radius: 10;" +
+                "-fx-border-width: 1;";
+    }
+
+    private static String fieldStyle() {
+        return  "-fx-background-color: #060C1C;" +
+                "-fx-text-fill: #A8C8F0;" +
+                "-fx-border-color: #1A3060;" +
+                "-fx-border-radius: 5;" +
+                "-fx-background-radius: 5;" +
+                "-fx-font-size: 13px;";
+    }
+
+    private static String comboStyle() {
+        return  "-fx-background-color: #060C1C;" +
+                "-fx-border-color: #1A3060;" +
+                "-fx-border-radius: 5;" +
+                "-fx-background-radius: 5;";
+    }
+
+    private static Button buildBtn(String text, String gradient) {
+        Button btn = new Button(text);
+        String base = "-fx-background-color: " + gradient + ";" +
+                "-fx-text-fill: #C8DCFF;" +
+                "-fx-font-size: 13px;" +
+                "-fx-font-weight: bold;" +
+                "-fx-padding: 10 24;" +
+                "-fx-background-radius: 8;" +
+                "-fx-border-color: transparent;" +
+                "-fx-cursor: hand;";
         btn.setStyle(base);
-        btn.setOnMouseEntered(e -> btn.setStyle(base.replace(bgNormal, bgHover)));
-        btn.setOnMouseExited(e  -> btn.setStyle(base));
+        // hover: aumentar brillo con opacidad
+        btn.setOnMouseEntered(e -> btn.setOpacity(0.85));
+        btn.setOnMouseExited(e  -> btn.setOpacity(1.0));
+        return btn;
     }
 
     private static Label sectionHeader(String text) {
         Label l = new Label(text);
-        l.setFont(Font.font("System", FontWeight.BOLD, 16));
-        l.setStyle("-fx-text-fill: #7aacdc;");
+        l.setFont(Font.font("System", FontWeight.BOLD, 14));
+        l.setStyle("-fx-text-fill: #4A8FFF; -fx-padding: 0 0 2 0;");
         return l;
     }
 
     private static Label fieldLabel(String text) {
         Label l = new Label(text);
-        l.setStyle("-fx-font-weight: bold; -fx-text-fill: #4e6888;");
+        l.setMinWidth(80);
+        l.setStyle("-fx-text-fill: #3A5880; -fx-font-size: 12px; -fx-font-weight: bold;");
         return l;
     }
 
-    private static void setVisible(Region node, boolean visible) {
-        node.setVisible(visible);
-        node.setManaged(visible);
-    }
+    private static void hide(Region r) { r.setVisible(false); r.setManaged(false); }
+    private static void show(Region r) { r.setVisible(true);  r.setManaged(true); }
 
-    private void showError(String header, String message) {
-        Alert a = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
-        a.setHeaderText(header);
+    private void showError(String h, String m) {
+        Alert a = new Alert(Alert.AlertType.ERROR, m, ButtonType.OK);
+        a.setHeaderText(h);
         a.showAndWait();
     }
 }

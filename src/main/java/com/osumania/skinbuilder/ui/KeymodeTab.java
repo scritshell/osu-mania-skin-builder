@@ -1,8 +1,8 @@
 package com.osumania.skinbuilder.ui;
 
 import com.osumania.skinbuilder.core.ManiaKeyConfig;
-import com.osumania.skinbuilder.image.PreviewAssetManager;
 import com.osumania.skinbuilder.image.GifFrameExtractor;
+import com.osumania.skinbuilder.image.PreviewAssetManager;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -20,98 +20,98 @@ import java.util.Map;
 import java.util.function.IntPredicate;
 
 /**
- * Pestaña de edición para un keymode concreto (4K, 7K, etc.).
- * Usa {@link PreviewPane} en lugar de {@link PreviewCanvas} para evitar
- * la race condition de Prism en gc.drawImage().
+ * Pestaña de edición de un keymode — rediseño limpio dark theme.
+ *
+ * <h2>Layout</h2>
+ * <pre>
+ *  ┌─────────────────────────────────────┐
+ *  │ StackPane (fondo constelaciones)    │
+ *  │  └─ SplitPane                       │
+ *  │      ├─ ScrollPane (controles)      │
+ *  │      └─ PreviewPane (preview)       │
+ *  └─────────────────────────────────────┘
+ * </pre>
+ *
+ * Las constelaciones son la capa más baja del StackPane externo.
+ * El SplitPane tiene fondo semitransparente, lo que permite ver las
+ * constelaciones en los bordes y zonas vacías sin tapar ningún control.
  */
 public class KeymodeTab extends SplitPane {
 
-    private final ManiaKeyConfig config;
-    private final PreviewAssetManager assetManager;
-    private final PreviewPane previewPane;   // ← cambiado de PreviewCanvas
+    // ── Paleta ────────────────────────────────────────────────────────────────
+    private static final String PANEL_BG    = "rgba(7,12,26,0.92)";
+    private static final String CARD_BG     = "rgba(9,15,30,0.96)";
+    private static final String BORDER      = "#182848";
+    private static final String TEXT_PRI    = "#C8DCFF";
+    private static final String TEXT_SEC    = "#3A5880";
+    private static final String TEXT_MONO   = "#7AB0E8";   // valores numéricos
+    private static final String ACCENT      = "#4A8FFF";
+    private static final String SPECIAL_CLR = "#C8A020";
 
-    // Listas para actualizar la UI dinámicamente al aplicar paletas
+    // ── Modelo ────────────────────────────────────────────────────────────────
+    private final ManiaKeyConfig    config;
+    private final PreviewAssetManager assetManager;
+    private final MainWindow        mainWindow;
+    private final PreviewPane       previewPane;
+
+    // Color pickers (para actualización desde paleta)
     private final List<ColorPicker> ricePickers = new ArrayList<>();
     private final List<ColorPicker> lnPickers   = new ArrayList<>();
-    private boolean isUpdatingPalette = false;
+    private boolean paletteUpdating = false;
 
     // =========================================================================
     // Paletas de gamemode
     // =========================================================================
 
-    private record GamemodePalette(
-            String name,
-            IntPredicate isSpecialFn,
-            java.awt.Color normalRice,  java.awt.Color specialRice,
-            java.awt.Color normalLn,    java.awt.Color specialLn) {}
+    private record Palette(
+            String name, IntPredicate isSpecial,
+            java.awt.Color riceNormal, java.awt.Color riceSpecial,
+            java.awt.Color lnNormal,   java.awt.Color lnSpecial) {}
 
-    private static final Map<Integer, List<GamemodePalette>> GAMEMODE_PALETTES = Map.of(
-            6, List.of(
-                    new GamemodePalette("6K Normal",   i -> false,
-                            java.awt.Color.WHITE, java.awt.Color.RED,
-                            java.awt.Color.WHITE, java.awt.Color.RED),
-                    new GamemodePalette("5K1S (BMS)", i -> i == 5,
-                            java.awt.Color.WHITE, java.awt.Color.RED,
-                            java.awt.Color.WHITE, java.awt.Color.RED)
-            ),
-            8, List.of(
-                    new GamemodePalette("4K4K",        i -> false,
-                            java.awt.Color.WHITE, new java.awt.Color(0,100,255),
-                            java.awt.Color.WHITE, new java.awt.Color(0,100,255)),
-                    new GamemodePalette("7K1S (BMS)", i -> i == 7,
-                            java.awt.Color.WHITE, java.awt.Color.RED,
-                            java.awt.Color.WHITE, java.awt.Color.RED)
-            ),
+    private static final Map<Integer, List<Palette>> PALETTES = Map.of(
+            6,  List.of(
+                    new Palette("6K normal",   i -> false,
+                            awt(255,255,255), awt(220,50,50), awt(255,255,255), awt(220,50,50)),
+                    new Palette("5K+1S BMS",   i -> i==5,
+                            awt(255,255,255), awt(220,50,50), awt(255,255,255), awt(220,50,50))),
+            8,  List.of(
+                    new Palette("4K4K",        i -> false,
+                            awt(255,255,255), awt(60,120,255), awt(255,255,255), awt(60,120,255)),
+                    new Palette("7K+1S BMS",   i -> i==7,
+                            awt(255,255,255), awt(220,50,50), awt(255,255,255), awt(220,50,50))),
             12, List.of(
-                    new GamemodePalette("10K2S (BMS)", i -> i == 5 || i == 6,
-                            java.awt.Color.WHITE, java.awt.Color.RED,
-                            java.awt.Color.WHITE, java.awt.Color.RED),
-                    new GamemodePalette("6K6K",        i -> false,
-                            java.awt.Color.WHITE, new java.awt.Color(0,100,255),
-                            java.awt.Color.WHITE, new java.awt.Color(0,100,255))
-            ),
+                    new Palette("10K+2S BMS",  i -> i==5||i==6,
+                            awt(255,255,255), awt(220,50,50), awt(255,255,255), awt(220,50,50)),
+                    new Palette("6K6K",        i -> false,
+                            awt(255,255,255), awt(60,120,255), awt(255,255,255), awt(60,120,255))),
             14, List.of(
-                    new GamemodePalette("7K7K (sin scratch)", i -> false,
-                            java.awt.Color.WHITE, new java.awt.Color(0,100,255),
-                            java.awt.Color.WHITE, new java.awt.Color(0,100,255)),
-                    new GamemodePalette("EZ2AC 5K4K5K", i -> i == 4 || i == 9,
-                            java.awt.Color.WHITE, java.awt.Color.RED,
-                            java.awt.Color.WHITE, java.awt.Color.RED)
-            ),
+                    new Palette("7K7K",        i -> false,
+                            awt(255,255,255), awt(60,120,255), awt(255,255,255), awt(60,120,255)),
+                    new Palette("EZ2AC 5K4K5K",i -> i==4||i==9,
+                            awt(255,255,255), awt(220,50,50), awt(255,255,255), awt(220,50,50))),
             16, List.of(
-                    new GamemodePalette("7K1S DP (BMS)", i -> i == 7 || i == 15,
-                            java.awt.Color.WHITE, java.awt.Color.RED,
-                            java.awt.Color.WHITE, java.awt.Color.RED),
-                    new GamemodePalette("EZ2AC 5K4K5K Scratch", i -> i == 4 || i == 9 || i == 0 || i == 15,
-                            java.awt.Color.WHITE, java.awt.Color.RED,
-                            java.awt.Color.WHITE, java.awt.Color.RED)
-            ),
+                    new Palette("7K+1S DP BMS",i -> i==7||i==15,
+                            awt(255,255,255), awt(220,50,50), awt(255,255,255), awt(220,50,50))),
             18, List.of(
-                    new GamemodePalette("10K8K", i -> false,
-                            java.awt.Color.WHITE, new java.awt.Color(0,100,255),
-                            java.awt.Color.WHITE, new java.awt.Color(0,100,255)),
-                    new GamemodePalette("9K9K",  i -> false,
-                            java.awt.Color.WHITE, new java.awt.Color(255,212,0),
-                            java.awt.Color.WHITE, new java.awt.Color(255,212,0))
-            )
+                    new Palette("10K8K",       i -> false,
+                            awt(255,255,255), awt(60,120,255), awt(255,255,255), awt(60,120,255)),
+                    new Palette("9K9K",        i -> false,
+                            awt(255,255,255), awt(255,200,0), awt(255,255,255), awt(255,200,0)))
     );
 
     // =========================================================================
     // Constructor
     // =========================================================================
 
-    public KeymodeTab(ManiaKeyConfig config, PreviewAssetManager assetManager) {
+    public KeymodeTab(ManiaKeyConfig config, PreviewAssetManager assetManager, MainWindow mainWindow) {
         this.config       = config;
         this.assetManager = assetManager;
+        this.mainWindow   = mainWindow;
 
-        // Preview (derecha)
-        this.previewPane = new PreviewPane();
-        this.previewPane.setAssetManager(assetManager);
-
-        // Controles (izquierda)
-        VBox leftContent = new VBox(20);
-        leftContent.setPadding(new Insets(20, 30, 20, 30));
-        leftContent.getChildren().addAll(
+        // ── Panel de controles (izquierda) ────────────────────────────────────
+        VBox controls = new VBox(14);
+        controls.setPadding(new Insets(20, 24, 20, 24));
+        controls.getChildren().addAll(
                 buildHeader(),
                 buildGeneralOptions(),
                 buildDecorationPanel(),
@@ -119,18 +119,49 @@ public class KeymodeTab extends SplitPane {
                 buildColumnsPanel()
         );
 
-        ScrollPane scrollPane = new ScrollPane(leftContent);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background-color: #f0f0f0;");
+        ScrollPane scrollControls = new ScrollPane(controls);
+        scrollControls.setFitToWidth(true);
+        scrollControls.setStyle(
+                "-fx-background: transparent;" +
+                        "-fx-background-color: transparent;" +
+                        "-fx-border-color: transparent;");
 
-        StackPane rightContent = new StackPane(previewPane);
-        rightContent.setStyle("-fx-background-color: #111318;");
-        rightContent.setPadding(new Insets(20));
-        VBox.setVgrow(previewPane, Priority.ALWAYS);
-        HBox.setHgrow(previewPane, Priority.ALWAYS);
+        // Fondo con constelaciones para el lado de controles
+        // isResizable()=true → el StackPane llama a resize() automáticamente.
+        // NO usar bind(): colisiona con resize() y lanza BoundValue exception.
+        ConstellationCanvas starsLeft = new ConstellationCanvas(28, 120, 0.20, 0.13);
+        starsLeft.setMouseTransparent(true);
 
-        getItems().addAll(scrollPane, rightContent);
-        setDividerPositions(0.60);
+        StackPane leftPane = new StackPane(starsLeft, scrollControls);
+        leftPane.setStyle("-fx-background-color: #060912;");
+
+        // ── Panel de preview (derecha) ────────────────────────────────────────
+        this.previewPane = new PreviewPane();
+        this.previewPane.setAssetManager(assetManager);
+
+        StackPane rightPane = new StackPane(previewPane);
+        rightPane.setStyle("-fx-background-color: #080B14;");
+
+        // ── Botón "Ver en preview completo" ──────────────────────────────────
+        Button previewBtn = new Button("↗  Preview completo");
+        previewBtn.setStyle(
+                "-fx-background-color: rgba(10,20,50,0.80);" +
+                        "-fx-text-fill: #4A8FFF;" +
+                        "-fx-font-size: 11px;" +
+                        "-fx-padding: 5 12;" +
+                        "-fx-background-radius: 6;" +
+                        "-fx-border-color: #1A3060;" +
+                        "-fx-border-radius: 6;" +
+                        "-fx-cursor: hand;");
+        previewBtn.setOnAction(e -> mainWindow.updatePreview(config));
+        StackPane.setAlignment(previewBtn, Pos.TOP_RIGHT);
+        StackPane.setMargin(previewBtn, new Insets(10));
+        rightPane.getChildren().add(previewBtn);
+
+        // ── SplitPane ─────────────────────────────────────────────────────────
+        getItems().addAll(leftPane, rightPane);
+        setDividerPositions(0.58);
+        setStyle("-fx-background-color: transparent; -fx-padding: 0;");
 
         requestRedraw();
     }
@@ -144,20 +175,20 @@ public class KeymodeTab extends SplitPane {
     // =========================================================================
 
     private HBox buildHeader() {
-        Label title = new Label(config.getDisplayName() + " — Editando skin.ini");
-        title.setFont(Font.font("System", FontWeight.BOLD, 18));
-        title.setStyle("-fx-text-fill: #333;");
+        Label title = new Label(config.getDisplayName());
+        title.setFont(Font.font("System", FontWeight.BOLD, 20));
+        title.setStyle("-fx-text-fill: " + TEXT_PRI + ";");
 
-        Label sub = new Label(
-                config.getColumns().size() + " columnas  |  " +
-                        "HitPos=" + config.getHitPosition() + "  |  " +
-                        "ColStart=" + config.getColumnStart()
-        );
-        sub.setStyle("-fx-text-fill: #888; -fx-font-size: 12px;");
+        Label stats = new Label(
+                config.getColumns().size() + " columnas  ·  " +
+                        "HitPos " + monoVal(config.getHitPosition()) + "  ·  " +
+                        "ColStart " + monoVal(config.getColumnStart()));
+        stats.setStyle("-fx-text-fill: " + TEXT_SEC + "; -fx-font-size: 11px;");
 
-        VBox labels = new VBox(3, title, sub);
-        HBox header = new HBox(labels);
+        VBox box = new VBox(3, title, stats);
+        HBox header = new HBox(box);
         header.setAlignment(Pos.CENTER_LEFT);
+        header.setPadding(new Insets(0, 0, 4, 0));
         return header;
     }
 
@@ -166,268 +197,234 @@ public class KeymodeTab extends SplitPane {
     // =========================================================================
 
     private TitledPane buildGeneralOptions() {
-        GridPane grid = new GridPane();
-        grid.setHgap(20);
-        grid.setVgap(12);
-        grid.setPadding(new Insets(18));
+        // ── Columna izquierda: campos numéricos ───────────────────────────────
+        GridPane numGrid = new GridPane();
+        numGrid.setHgap(10);
+        numGrid.setVgap(9);
 
-        int row = 0;
+        int r = 0;
+        numGrid.add(fLabel("HitPosition"),   0, r); numGrid.add(numField(config.getHitPosition(),   0, 480, config::setHitPosition),  1, r++);
+        numGrid.add(fLabel("ColumnStart"),   0, r); numGrid.add(numField(config.getColumnStart(),   0, 640, config::setColumnStart),   1, r++);
+        numGrid.add(fLabel("ScorePosition"), 0, r); numGrid.add(numField(config.getScorePosition(), 0, 480, config::setScorePosition), 1, r++);
+        numGrid.add(fLabel("ComboPosition"), 0, r); numGrid.add(numField(config.getComboPosition(), 0, 480, config::setComboPosition), 1, r++);
 
-        grid.add(label("HitPosition:"),  0, row);
-        grid.add(intField(config.getHitPosition(),  0, 480, config::setHitPosition),  1, row++);
+        // ── Columna derecha: checkboxes + controles ───────────────────────────
+        CheckBox cbUpsideDown  = chk("UpsideDown",           config.isUpsideDown(),       config::setUpsideDown);
+        CheckBox cbJudgement   = chk("JudgementLine",        config.isJudgementLine(),    config::setJudgementLine);
+        CheckBox cbKeysUnder   = chk("KeysUnderNotes",       config.isKeysUnderNotes(),   config::setKeysUnderNotes);
+        CheckBox cbSplitStages = chk("SplitStages (10K+)",   config.isSplitStages(),      config::setSplitStages);
+        cbSplitStages.setDisable(config.getKeys() < 10);
+        CheckBox cbSepLn   = chk("Color LN separado",        config.isUseSeparateLnColor(), config::setUseSeparateLnColor);
+        CheckBox cbSepTail = chk("LN tail propia (XT)",      config.isUseSeparateLnTail(),  config::setUseSeparateLnTail);
 
-        grid.add(label("ColumnStart:"),  0, row);
-        grid.add(intField(config.getColumnStart(),  0, 640, config::setColumnStart),  1, row++);
+        // Percy
+        Label percyLbl = fLabel("Percy Size (px)");
+        Spinner<Integer> percySpin = spinner(0, 400, config.getPercySize(), 8,
+                val -> { config.setPercySize(val); requestRedraw(); });
 
-        grid.add(label("ScorePosition:"), 0, row);
-        grid.add(intField(config.getScorePosition(), 0, 480, config::setScorePosition), 1, row++);
+        Label shapeLbl = fLabel("Forma punta");
+        ComboBox<ManiaKeyConfig.PercyShape> shapeBox = new ComboBox<>();
+        shapeBox.getItems().setAll(ManiaKeyConfig.PercyShape.values());
+        shapeBox.setValue(config.getPercyShape());
+        shapeBox.setStyle(comboStyle());
+        shapeBox.setPrefWidth(110);
+        shapeBox.valueProperty().addListener((o, old, v) -> { config.setPercyShape(v); requestRedraw(); });
 
-        grid.add(label("ComboPosition:"), 0, row);
-        grid.add(intField(config.getComboPosition(), 0, 480, config::setComboPosition), 1, row++);
+        // Receptor offset
+        Label offsetLbl = fLabel("Receptor Offset (Y)");
+        Spinner<Integer> offsetSpin = spinner(-200, 200, config.getReceptorOffset(), 1,
+                val -> { config.setReceptorOffset(val); requestRedraw(); });
 
-        Separator sep = new Separator();
-        grid.add(sep, 0, row++, 4, 1);
-
-        // Checkboxes izquierda
-        CheckBox upsideDown  = check("UpsideDown",           config.isUpsideDown(),       config::setUpsideDown);
-        CheckBox judgement   = check("JudgementLine",        config.isJudgementLine(),    config::setJudgementLine);
-        CheckBox keysUnder   = check("KeysUnderNotes",       config.isKeysUnderNotes(),   config::setKeysUnderNotes);
-        CheckBox splitStages = check("SplitStages (10K+)",   config.isSplitStages(),      config::setSplitStages);
-        splitStages.setDisable(config.getKeys() < 10);
-
-        VBox leftChecks = new VBox(8, upsideDown, judgement, keysUnder, splitStages);
-        grid.add(leftChecks, 0, row, 2, 1);
-
-        // Controles derecha
-        CheckBox separateLn   = check("Colores LN separados",      config.isUseSeparateLnColor(),      config::setUseSeparateLnColor);
-        CheckBox separateTail = check("LN tail propia (NoteImageXT)", config.isUseSeparateLnTail(),   config::setUseSeparateLnTail);
-
-        Label percySizeLbl = new Label("Percy Size (px):");
-        percySizeLbl.setStyle("-fx-font-size: 12px;");
-        Spinner<Integer> percySpinner = new Spinner<>(0, 400, config.getPercySize(), 10);
-        percySpinner.setEditable(true);
-        percySpinner.setPrefWidth(90);
-        percySpinner.valueProperty().addListener((obs, old, val) -> { config.setPercySize(val); requestRedraw(); });
-        HBox percySizeRow = new HBox(8, percySizeLbl, percySpinner);
-        percySizeRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label percyShapeLbl = new Label("Forma punta:");
-        percyShapeLbl.setStyle("-fx-font-size: 12px;");
-        ComboBox<ManiaKeyConfig.PercyShape> percyShapeBox = new ComboBox<>();
-        percyShapeBox.getItems().setAll(ManiaKeyConfig.PercyShape.values());
-        percyShapeBox.setValue(config.getPercyShape());
-        percyShapeBox.valueProperty().addListener((obs, old, val) -> { config.setPercyShape(val); requestRedraw(); });
-        HBox percyShapeRow = new HBox(8, percyShapeLbl, percyShapeBox);
-        percyShapeRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label offsetLbl = new Label("Receptor Offset (Y):");
-        offsetLbl.setStyle("-fx-font-size: 12px;");
-        Spinner<Integer> offsetSpinner = new Spinner<>(-200, 200, config.getReceptorOffset(), 1);
-        offsetSpinner.setEditable(true);
-        offsetSpinner.setPrefWidth(90);
-        offsetSpinner.valueProperty().addListener((obs, old, val) -> { config.setReceptorOffset(val); requestRedraw(); });
-        HBox offsetRow = new HBox(8, offsetLbl, offsetSpinner);
-        offsetRow.setAlignment(Pos.CENTER_LEFT);
-
-        CheckBox transpCheck = check("Transparencia global", config.isUseGlobalTransparency(), config::setUseGlobalTransparency);
-        Slider alphaSlider = new Slider(0, 255, config.getGlobalAlpha());
-        alphaSlider.setShowTickLabels(true);
-        alphaSlider.setMajorTickUnit(64);
-        alphaSlider.setPrefWidth(160);
-        alphaSlider.setDisable(!config.isUseGlobalTransparency());
-
-        Label alphaValue = new Label(String.valueOf(config.getGlobalAlpha()));
-        alphaValue.setStyle("-fx-font-size: 11px; -fx-text-fill: #666;");
-
-        transpCheck.selectedProperty().addListener((obs, old, val) -> { alphaSlider.setDisable(!val); requestRedraw(); });
-        alphaSlider.valueProperty().addListener((obs, old, val) -> {
-            config.setGlobalAlpha(val.intValue());
-            alphaValue.setText(String.valueOf(val.intValue()));
+        // Global alpha
+        CheckBox cbTransp = chk("Transparencia global", config.isUseGlobalTransparency(), config::setUseGlobalTransparency);
+        Label alphaLbl  = fLabel("Alpha");
+        Slider alphaSld = new Slider(0, 255, config.getGlobalAlpha());
+        alphaSld.setPrefWidth(140);
+        alphaSld.setDisable(!config.isUseGlobalTransparency());
+        alphaSld.setStyle("-fx-accent: " + ACCENT + ";");
+        Label alphaVal  = new Label(String.valueOf(config.getGlobalAlpha()));
+        alphaVal.setStyle("-fx-text-fill: " + TEXT_MONO + "; -fx-font-family: monospace; -fx-font-size: 12px;");
+        cbTransp.selectedProperty().addListener((o, old, v) -> {
+            alphaSld.setDisable(!v);
+            config.setUseGlobalTransparency(v);
+            requestRedraw();
+        });
+        alphaSld.valueProperty().addListener((o, old, v) -> {
+            int val = v.intValue();
+            config.setGlobalAlpha(val);
+            alphaVal.setText(String.valueOf(val));
             requestRedraw();
         });
 
-        HBox alphaRow = new HBox(8, alphaSlider, alphaValue);
+        // Ensamblar columna derecha
+        GridPane rightGrid = new GridPane();
+        rightGrid.setHgap(10);
+        rightGrid.setVgap(8);
+        int rr = 0;
+        rightGrid.add(cbUpsideDown,  0, rr, 2, 1); rr++;
+        rightGrid.add(cbJudgement,   0, rr, 2, 1); rr++;
+        rightGrid.add(cbKeysUnder,   0, rr, 2, 1); rr++;
+        rightGrid.add(cbSplitStages, 0, rr, 2, 1); rr++;
+        rightGrid.add(cbSepLn,       0, rr, 2, 1); rr++;
+        rightGrid.add(cbSepTail,     0, rr, 2, 1); rr++;
+        // separador visual
+        rightGrid.add(hSep(), 0, rr, 2, 1); rr++;
+        rightGrid.add(percyLbl, 0, rr); rightGrid.add(percySpin,  1, rr++);
+        rightGrid.add(shapeLbl, 0, rr); rightGrid.add(shapeBox,   1, rr++);
+        rightGrid.add(offsetLbl,0, rr); rightGrid.add(offsetSpin, 1, rr++);
+        rightGrid.add(hSep(), 0, rr, 2, 1); rr++;
+        rightGrid.add(cbTransp, 0, rr, 2, 1); rr++;
+        rightGrid.add(alphaLbl, 0, rr);
+        HBox alphaRow = new HBox(8, alphaSld, alphaVal);
         alphaRow.setAlignment(Pos.CENTER_LEFT);
+        rightGrid.add(alphaRow, 1, rr);
 
-        VBox rightChecks = new VBox(8, separateLn, separateTail, percySizeRow, percyShapeRow, offsetRow, transpCheck, alphaRow);
-        rightChecks.setMinWidth(320);
-        grid.add(rightChecks, 2, row, 2, 1);
+        // Layout: dos columnas
+        HBox columns = new HBox(32, numGrid, rightGrid);
+        columns.setPadding(new Insets(16));
+        columns.setStyle(cardStyle());
 
-        TitledPane pane = new TitledPane("Opciones generales", grid);
-        pane.setCollapsible(true);
-        pane.setStyle("-fx-font-weight: bold;");
-        return pane;
+        TitledPane tp = titledPane("Opciones generales", columns);
+        tp.setExpanded(true);
+        return tp;
     }
 
     // =========================================================================
-    // Panel de Decoración del Stage — con botones de carga de imagen/GIF
+    // Decoración del stage
     // =========================================================================
 
     private TitledPane buildDecorationPanel() {
-        VBox box = new VBox(10);
-        box.setPadding(new Insets(15));
+        VBox box = new VBox(8);
+        box.setPadding(new Insets(14));
+        box.setStyle(cardStyle());
 
-        Label tip = new Label(
-                "💡 Carga imágenes locales (.png / .gif) para ver el stage con tus assets antes de exportar."
-        );
-        tip.setStyle("-fx-text-fill: #666; -fx-font-size: 11px;");
+        Label tip = new Label("💡  Carga imágenes locales (.png / .gif) para previsualizar antes de exportar.");
         tip.setWrapText(true);
+        tip.setStyle("-fx-text-fill: " + TEXT_SEC + "; -fx-font-size: 11px;");
         box.getChildren().add(tip);
 
         box.getChildren().addAll(
-                buildStageImageRow("StageLeftImage:",   config.getStageLeftImage(),   config::setStageLeftImage),
-                buildStageImageRow("StageRightImage:",  config.getStageRightImage(),  config::setStageRightImage),
-                buildStageImageRow("StageBottomImage:", config.getStageBottomImage(), config::setStageBottomImage),
-                buildStageImageRow("StageHintImage:",   config.getStageHintImage(),   config::setStageHintImage)
+                stageImageRow("StageLeft:",   config.getStageLeftImage(),   config::setStageLeftImage),
+                stageImageRow("StageRight:",  config.getStageRightImage(),  config::setStageRightImage),
+                stageImageRow("StageBottom:", config.getStageBottomImage(), config::setStageBottomImage),
+                stageImageRow("StageHint:",   config.getStageHintImage(),   config::setStageHintImage)
         );
 
-        TitledPane pane = new TitledPane("Decoración del Stage", box);
-        pane.setCollapsible(true);
-        pane.setExpanded(false);
-        pane.setStyle("-fx-font-weight: bold;");
-        return pane;
+        TitledPane tp = titledPane("Decoración del Stage", box);
+        tp.setExpanded(false);
+        return tp;
     }
 
-    private HBox buildStageImageRow(String labelText,
-                                    String currentVal,
-                                    java.util.function.Consumer<String> setter) {
-        Label lbl = new Label(labelText);
-        lbl.setPrefWidth(130);
-        lbl.setStyle("-fx-font-size: 13px;");
+    private HBox stageImageRow(String label, String current, java.util.function.Consumer<String> setter) {
+        Label lbl = new Label(label);
+        lbl.setMinWidth(90);
+        lbl.setStyle("-fx-text-fill: " + TEXT_SEC + "; -fx-font-size: 12px;");
 
-        TextField tf = new TextField(currentVal == null ? "" : currentVal);
-        tf.setPrefWidth(140);
-        tf.textProperty().addListener((obs, old, val) -> {
-            setter.accept(val.trim().isEmpty() ? null : val.trim());
+        TextField tf = new TextField(current == null ? "" : current);
+        tf.setPrefWidth(130);
+        tf.setStyle(fieldStyle());
+        tf.textProperty().addListener((o, old, v) -> {
+            setter.accept(v.isBlank() ? null : v.trim());
             requestRedraw();
         });
 
-        Button btnLoad = new Button("📂 Cargar");
-        btnLoad.setStyle("-fx-cursor: hand; -fx-font-size: 11px;");
-        btnLoad.setOnAction(e -> {
+        Button btn = new Button("Cargar");
+        btn.setStyle(smallBtnStyle());
+        btn.setOnAction(e -> {
             FileChooser fc = new FileChooser();
-            fc.setTitle("Cargar imagen para " + labelText.replace(":", ""));
-            fc.getExtensionFilters().addAll(
-                    new FileChooser.ExtensionFilter("Imágenes", "*.png", "*.gif")
-            );
+            fc.setTitle("Cargar imagen");
+            fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Imagen", "*.png", "*.gif"));
             File file = fc.showOpenDialog(getScene().getWindow());
             if (file == null) return;
-
-            String fileName = file.getName();
-            tf.setText(fileName);
-            setter.accept(fileName);
-
-            if (fileName.toLowerCase().endsWith(".gif")) {
-                loadGifAsync(file, fileName);
+            tf.setText(file.getName());
+            setter.accept(file.getName());
+            if (file.getName().toLowerCase().endsWith(".gif")) {
+                loadGifAsync(file, file.getName());
             } else {
                 try {
                     java.awt.image.BufferedImage img = ImageIO.read(file);
-                    if (img != null) {
-                        assetManager.putStageImage(fileName, img);
-                        requestRedraw();
-                    }
-                } catch (Exception ex) {
-                    System.err.println("Error leyendo PNG: " + ex.getMessage());
-                }
+                    if (img != null) { assetManager.putStageImage(file.getName(), img); requestRedraw(); }
+                } catch (Exception ex) { System.err.println("Error: " + ex.getMessage()); }
             }
         });
 
-        HBox row = new HBox(10, lbl, tf, btnLoad);
+        HBox row = new HBox(8, lbl, tf, btn);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }
 
-    private void loadGifAsync(File file, String assetName) {
+    private void loadGifAsync(File file, String name) {
         Task<List<GifFrameExtractor.GifFrame>> task = new Task<>() {
-            @Override
-            protected List<GifFrameExtractor.GifFrame> call() throws Exception {
+            @Override protected List<GifFrameExtractor.GifFrame> call() throws Exception {
                 return GifFrameExtractor.extract(file);
             }
         };
         task.setOnSucceeded(e -> {
             List<GifFrameExtractor.GifFrame> frames = task.getValue();
             if (frames != null && !frames.isEmpty()) {
-                assetManager.putStageGif(assetName, frames);
+                assetManager.putStageGif(name, frames);
                 previewPane.enableGifAnimation(true);
                 requestRedraw();
             }
         });
-        task.setOnFailed(e ->
-                System.err.println("Error extrayendo GIF: " + task.getException()));
-        Thread t = new Thread(task, "gif-loader");
-        t.setDaemon(true);
-        t.start();
+        task.setOnFailed(e -> System.err.println("GIF error: " + task.getException()));
+        new Thread(task, "gif-loader").start();
     }
 
     // =========================================================================
-    // Panel de paletas de gamemode
+    // Panel de paletas
     // =========================================================================
 
     private VBox buildPalettePanel() {
-        int keys = config.getKeys();
-        Label title = new Label("Paletas de Gamemode — " + keys + "K");
-        title.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #333;");
+        Label title = new Label("Paletas rápidas — " + config.getKeys() + "K");
+        title.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: " + ACCENT + ";");
 
-        FlowPane buttonsBox = new FlowPane(10, 6);   // hGap=10, vGap=6
-        buttonsBox.setAlignment(Pos.CENTER_LEFT);
+        FlowPane btns = new FlowPane(8, 6);
 
-        List<GamemodePalette> palettes = GAMEMODE_PALETTES.get(keys);
+        List<Palette> palettes = PALETTES.getOrDefault(config.getKeys(), List.of());
 
-        // Fallback genérico si el keymode no tiene paletas específicas
-        if (palettes == null || palettes.isEmpty()) {
+        // Fallback genérico
+        if (palettes.isEmpty()) {
             palettes = List.of(
-                    new GamemodePalette("IIDX Genérico",
-                            i -> config.isSpecialColumn(i, keys),
-                            java.awt.Color.WHITE, java.awt.Color.RED,
-                            java.awt.Color.WHITE, java.awt.Color.RED),
-                    new GamemodePalette("Reset a Blanco",
-                            i -> false,
-                            java.awt.Color.WHITE, java.awt.Color.WHITE,
-                            java.awt.Color.WHITE, java.awt.Color.WHITE)
-            );
+                    new Palette("IIDX genérico",
+                            i -> config.isSpecialColumn(i, config.getKeys()),
+                            awt(255,255,255), awt(220,50,50),
+                            awt(255,255,255), awt(220,50,50)));
         }
 
-        for (GamemodePalette p : palettes) {
+        for (Palette p : palettes) {
             Button btn = new Button(p.name());
-            btn.setStyle("-fx-font-size: 12px; -fx-cursor: hand; -fx-padding: 6 14; " +
-                    "-fx-background-radius: 6;");
+            btn.setStyle(smallBtnStyle());
             btn.setOnAction(e -> applyPalette(p));
-            buttonsBox.getChildren().add(btn);
+            btns.getChildren().add(btn);
         }
 
-        // Botón "Reset a Blanco" siempre disponible
-        Button resetBtn = new Button("⬜  Reset a Blanco");
-        resetBtn.setStyle("-fx-font-size: 12px; -fx-cursor: hand; -fx-padding: 6 14; " +
-                "-fx-background-radius: 6; -fx-background-color: #e0e0e0;");
-        resetBtn.setOnAction(e -> applyPalette(new GamemodePalette("Reset",
-                i -> false,
-                java.awt.Color.WHITE, java.awt.Color.WHITE,
-                java.awt.Color.WHITE, java.awt.Color.WHITE)));
-        buttonsBox.getChildren().add(resetBtn);
+        Button reset = new Button("Reset blanco");
+        reset.setStyle(smallBtnStyle());
+        reset.setOnAction(e -> applyPalette(new Palette("Reset",
+                i -> false, awt(255,255,255), awt(255,255,255),
+                awt(255,255,255), awt(255,255,255))));
+        btns.getChildren().add(reset);
 
-        VBox root = new VBox(10, title, buttonsBox);
-        root.setPadding(new Insets(14));
-        root.setStyle("-fx-background-color: white; -fx-border-color: #e0e0e0; " +
-                "-fx-border-radius: 8; -fx-background-radius: 8;");
-        return root;
+        VBox box = new VBox(10, title, btns);
+        box.setPadding(new Insets(14));
+        box.setStyle(cardStyle());
+        return box;
     }
 
-    private void applyPalette(GamemodePalette p) {
-        isUpdatingPalette = true;
+    private void applyPalette(Palette p) {
+        paletteUpdating = true;
         try {
-            int keys = config.getKeys();
-            for (int i = 0; i < keys; i++) {
+            for (int i = 0; i < config.getKeys(); i++) {
                 ManiaKeyConfig.ColumnConfig col = config.getColumn(i);
-                boolean isSpecial = p.isSpecialFn().test(i);
-
-                col.riceColor = isSpecial ? p.specialRice() : p.normalRice();
-                col.lnColor   = isSpecial ? p.specialLn()   : p.normalLn();
-
-                if (i < ricePickers.size()) ricePickers.get(i).setValue(toFx(col.riceColor));
-                if (i < lnPickers.size())   lnPickers.get(i).setValue(toFx(col.lnColor));
+                boolean sp = p.isSpecial().test(i);
+                col.riceColor = sp ? p.riceSpecial() : p.riceNormal();
+                col.lnColor   = sp ? p.lnSpecial()   : p.lnNormal();
+                if (i < ricePickers.size()) ricePickers.get(i).setValue(fxColor(col.riceColor));
+                if (i < lnPickers.size())   lnPickers.get(i).setValue(fxColor(col.lnColor));
             }
         } finally {
-            isUpdatingPalette = false;
+            paletteUpdating = false;
         }
         requestRedraw();
     }
@@ -437,160 +434,236 @@ public class KeymodeTab extends SplitPane {
     // =========================================================================
 
     private TitledPane buildColumnsPanel() {
-        int keys = config.getKeys();
         ricePickers.clear();
         lnPickers.clear();
 
-        HBox columnsRow = new HBox(10);
-        columnsRow.setPadding(new Insets(14));
-        columnsRow.setAlignment(Pos.CENTER_LEFT);
-        for (int i = 0; i < keys; i++) columnsRow.getChildren().add(buildColumnCard(i));
+        HBox row = new HBox(8);
+        row.setPadding(new Insets(12));
+        for (int i = 0; i < config.getKeys(); i++) {
+            row.getChildren().add(buildColumnCard(i));
+        }
 
-        ScrollPane scroll = new ScrollPane(columnsRow);
+        ScrollPane scroll = new ScrollPane(row);
         scroll.setFitToHeight(true);
         scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-        scroll.setStyle("-fx-background-color: transparent; -fx-background-insets: 0;");
-        scroll.setPrefHeight(380);
+        scroll.setStyle(
+                "-fx-background: transparent;" +
+                        "-fx-background-color: transparent;" +
+                        "-fx-border-color: transparent;");
+        scroll.setPrefHeight(300);
 
-        TitledPane pane = new TitledPane("Columnas (" + keys + "K)", scroll);
-        pane.setCollapsible(true);
-        pane.setExpanded(true);
-        pane.setStyle("-fx-font-weight: bold;");
-        return pane;
+        TitledPane tp = titledPane("Columnas (" + config.getKeys() + "K)", scroll);
+        tp.setExpanded(true);
+        return tp;
     }
 
-    private VBox buildColumnCard(int colIndex) {
-        ManiaKeyConfig.ColumnConfig col = config.getColumn(colIndex);
-        boolean isSpecial = config.isSpecialColumn(colIndex, config.getKeys());
+    private VBox buildColumnCard(int idx) {
+        ManiaKeyConfig.ColumnConfig col = config.getColumn(idx);
+        boolean isSpecial = config.isSpecialColumn(idx, config.getKeys());
 
-        VBox card = new VBox(10);
+        String borderColor = isSpecial ? SPECIAL_CLR : BORDER;
+        String bgColor     = isSpecial ? "rgba(22,18,6,0.96)" : "rgba(9,15,30,0.96)";
+
+        VBox card = new VBox(9);
         card.setAlignment(Pos.TOP_CENTER);
-        card.setMinWidth(130);
-        card.setPrefWidth(130);
-
-        String borderColor = isSpecial ? "#c0a000" : "#c4c4c4";
-        String bgColor     = isSpecial ? "#fffbea" : "#ffffff";
+        card.setMinWidth(122);
+        card.setPrefWidth(122);
         card.setStyle(
-                "-fx-border-color: " + borderColor + ";" +
-                        "-fx-border-radius: 9;" +
-                        "-fx-border-width: 1.5;" +
-                        "-fx-background-color: " + bgColor + ";" +
-                        "-fx-background-radius: 9;" +
-                        "-fx-padding: 14 10;"
-        );
+                "-fx-background-color: " + bgColor + ";" +
+                        "-fx-background-radius: 8;" +
+                        "-fx-border-color: " + borderColor + ";" +
+                        "-fx-border-radius: 8;" +
+                        "-fx-border-width: 1;" +
+                        "-fx-padding: 12 9;");
 
-        String titleText = "Col " + (colIndex + 1) + (isSpecial ? "  ★" : "");
+        // Título de columna
+        String titleText = "Col " + (idx + 1) + (isSpecial ? "  ★" : "");
         Label title = new Label(titleText);
-        title.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;"
-                + (isSpecial ? " -fx-text-fill: #c0a000;" : ""));
+        title.setFont(Font.font("System", FontWeight.BOLD, 12));
+        title.setStyle("-fx-text-fill: " + (isSpecial ? SPECIAL_CLR : TEXT_PRI) + ";");
 
-        HBox widthRow = new HBox(6);
-        widthRow.setAlignment(Pos.CENTER);
-        Label widthLbl = new Label("Width:");
-        widthLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #555;");
-        TextField widthField = intField(col.columnWidth, 0, 500, val -> col.columnWidth = val);
-        widthField.setPrefWidth(52);
-        widthRow.getChildren().addAll(widthLbl, widthField);
-
-        // Rice color
-        VBox riceBox = new VBox(4);
-        riceBox.setAlignment(Pos.CENTER);
-        Label riceLbl = new Label("Rice");
-        riceLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #555;");
-        ColorPicker ricePicker = new ColorPicker(toFx(col.riceColor));
-        ricePicker.setPrefWidth(115);
-        ricePicker.setOnAction(e -> {
-            if (!isUpdatingPalette) { col.riceColor = toAwt(ricePicker.getValue()); requestRedraw(); }
+        // Width
+        TextField widthTf = numField(col.columnWidth, 0, 500, val -> {
+            col.columnWidth = val;
+            requestRedraw();
         });
-        ricePickers.add(ricePicker);
-        riceBox.getChildren().addAll(riceLbl, ricePicker);
+        widthTf.setPrefWidth(70);
+        HBox widthRow = new HBox(6, fLabel("W:"), widthTf);
+        widthRow.setAlignment(Pos.CENTER_LEFT);
 
-        // LN color
-        VBox lnBox = new VBox(4);
-        lnBox.setAlignment(Pos.CENTER);
-        Label lnLbl = new Label("LN");
-        lnLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #555;");
-        ColorPicker lnPicker = new ColorPicker(toFx(col.lnColor));
-        lnPicker.setPrefWidth(115);
-        lnPicker.setOnAction(e -> {
-            if (!isUpdatingPalette) { col.lnColor = toAwt(lnPicker.getValue()); requestRedraw(); }
+        // Rice picker
+        ColorPicker ricePk = colorPicker(col.riceColor, c -> {
+            if (!paletteUpdating) { col.riceColor = awtColor(c); requestRedraw(); }
         });
-        lnPickers.add(lnPicker);
-        lnBox.getChildren().addAll(lnLbl, lnPicker);
+        ricePickers.add(ricePk);
 
-        // ColourLight
-        VBox lightBox = new VBox(4);
-        lightBox.setAlignment(Pos.CENTER);
-        Label lightLbl = new Label("ColourLight");
-        lightLbl.setStyle("-fx-font-size: 10px; -fx-text-fill: #888;");
-        ColorPicker lightPicker = new ColorPicker(toFx(col.lightColor));
-        lightPicker.setPrefWidth(115);
-        lightPicker.setOnAction(e -> { col.lightColor = toAwt(lightPicker.getValue()); requestRedraw(); });
-        lightBox.getChildren().addAll(lightLbl, lightPicker);
+        // LN picker
+        ColorPicker lnPk = colorPicker(col.lnColor, c -> {
+            if (!paletteUpdating) { col.lnColor = awtColor(c); requestRedraw(); }
+        });
+        lnPickers.add(lnPk);
 
-        Label noteImgLbl = new Label(truncate(col.noteImageRice, 15));
-        noteImgLbl.setStyle("-fx-font-size: 10px; -fx-text-fill: #999;");
+        // ColourLight picker
+        ColorPicker lightPk = colorPicker(col.lightColor, c -> {
+            col.lightColor = awtColor(c);
+            requestRedraw();
+        });
 
-        card.getChildren().addAll(title, widthRow, riceBox, lnBox, lightBox, noteImgLbl);
+        card.getChildren().addAll(
+                title, widthRow,
+                colPickerRow("Rice",  ricePk),
+                colPickerRow("LN",    lnPk),
+                colPickerRow("Light", lightPk)
+        );
         return card;
     }
 
+    private VBox colPickerRow(String label, ColorPicker picker) {
+        Label lbl = new Label(label);
+        lbl.setStyle("-fx-text-fill: " + TEXT_SEC + "; -fx-font-size: 10px;");
+        picker.setPrefWidth(104);
+        VBox box = new VBox(2, lbl, picker);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
+    }
+
     // =========================================================================
-    // Helpers conversión de color
+    // Helpers de UI
     // =========================================================================
 
-    private static javafx.scene.paint.Color toFx(java.awt.Color c) {
+    private Label fLabel(String text) {
+        Label l = new Label(text);
+        l.setMinWidth(110);
+        l.setStyle("-fx-text-fill: " + TEXT_SEC + "; -fx-font-size: 12px;");
+        return l;
+    }
+
+    private TextField numField(int initial, int min, int max,
+                               java.util.function.IntConsumer setter) {
+        TextField tf = new TextField(String.valueOf(initial));
+        tf.setPrefWidth(75);
+        tf.setStyle(fieldStyle());
+        Runnable apply = () -> {
+            try {
+                int v = Math.max(min, Math.min(max, Integer.parseInt(tf.getText().trim())));
+                setter.accept(v);
+                tf.setText(String.valueOf(v));
+                requestRedraw();
+            } catch (NumberFormatException e) {
+                tf.setText(String.valueOf(initial));
+            }
+        };
+        tf.setOnAction(e  -> apply.run());
+        tf.focusedProperty().addListener((o, was, is) -> { if (!is) apply.run(); });
+        return tf;
+    }
+
+    private CheckBox chk(String text, boolean selected,
+                         java.util.function.Consumer<Boolean> onChange) {
+        CheckBox cb = new CheckBox(text);
+        cb.setSelected(selected);
+        cb.setStyle("-fx-font-size: 12px; -fx-text-fill: " + TEXT_PRI + ";");
+        cb.selectedProperty().addListener((o, old, v) -> { onChange.accept(v); requestRedraw(); });
+        return cb;
+    }
+
+    private Spinner<Integer> spinner(int min, int max, int init, int step,
+                                     java.util.function.IntConsumer onChange) {
+        Spinner<Integer> sp = new Spinner<>(min, max, init, step);
+        sp.setEditable(true);
+        sp.setPrefWidth(90);
+        sp.setStyle("-fx-font-size: 12px;");
+        sp.valueProperty().addListener((o, old, v) -> onChange.accept(v));
+        return sp;
+    }
+
+    private ColorPicker colorPicker(java.awt.Color init,
+                                    java.util.function.Consumer<javafx.scene.paint.Color> onChange) {
+        ColorPicker cp = new ColorPicker(fxColor(init));
+        cp.setStyle("-fx-background-color: #060C1C; -fx-border-color: " + BORDER + ";" +
+                "-fx-border-radius: 5; -fx-background-radius: 5;");
+        cp.setOnAction(e -> onChange.accept(cp.getValue()));
+        return cp;
+    }
+
+    private TitledPane titledPane(String title, javafx.scene.Node content) {
+        TitledPane tp = new TitledPane(title, content);
+        tp.setCollapsible(true);
+        tp.setStyle(
+                "-fx-font-weight: bold;" +
+                        "-fx-text-fill: " + TEXT_PRI + ";" +
+                        "-fx-font-size: 13px;");
+        return tp;
+    }
+
+    private Region hSep() {
+        Region r = new Region();
+        r.setMinHeight(1);
+        r.setMaxHeight(1);
+        r.setPrefHeight(1);
+        r.setStyle("-fx-background-color: " + BORDER + ";");
+        GridPane.setColumnSpan(r, 2);
+        VBox.setMargin(r, new Insets(2, 0, 2, 0));
+        return r;
+    }
+
+    // ── Estilos de cadena ──────────────────────────────────────────────────
+
+    private String cardStyle() {
+        return  "-fx-background-color: " + CARD_BG + ";" +
+                "-fx-background-radius: 9;" +
+                "-fx-border-color: " + BORDER + ";" +
+                "-fx-border-radius: 9;" +
+                "-fx-border-width: 1;";
+    }
+
+    private static String fieldStyle() {
+        return  "-fx-background-color: #060C1C;" +
+                "-fx-text-fill: #7AB0E8;" +
+                "-fx-font-family: monospace;" +
+                "-fx-border-color: #182848;" +
+                "-fx-border-radius: 5;" +
+                "-fx-background-radius: 5;" +
+                "-fx-font-size: 12px;";
+    }
+
+    private static String comboStyle() {
+        return  "-fx-background-color: #060C1C;" +
+                "-fx-border-color: #182848;" +
+                "-fx-border-radius: 5;" +
+                "-fx-background-radius: 5;";
+    }
+
+    private static String smallBtnStyle() {
+        return  "-fx-background-color: #0C1830;" +
+                "-fx-text-fill: #7AAAD8;" +
+                "-fx-font-size: 11px;" +
+                "-fx-padding: 5 12;" +
+                "-fx-background-radius: 6;" +
+                "-fx-border-color: #182848;" +
+                "-fx-border-radius: 6;" +
+                "-fx-cursor: hand;";
+    }
+
+    // ── Colores ───────────────────────────────────────────────────────────────
+
+    private static java.awt.Color awt(int r, int g, int b) {
+        return new java.awt.Color(r, g, b);
+    }
+
+    private static javafx.scene.paint.Color fxColor(java.awt.Color c) {
         if (c == null) return javafx.scene.paint.Color.WHITE;
         return javafx.scene.paint.Color.rgb(c.getRed(), c.getGreen(), c.getBlue(), c.getAlpha() / 255.0);
     }
 
-    private static java.awt.Color toAwt(javafx.scene.paint.Color c) {
-        return new java.awt.Color((float) c.getRed(), (float) c.getGreen(),
+    private static java.awt.Color awtColor(javafx.scene.paint.Color c) {
+        return new java.awt.Color(
+                (float) c.getRed(), (float) c.getGreen(),
                 (float) c.getBlue(), (float) c.getOpacity());
     }
 
-    // =========================================================================
-    // Helpers UI
-    // =========================================================================
-
-    private Label label(String text) {
-        Label l = new Label(text);
-        l.setStyle("-fx-font-size: 13px;");
-        return l;
-    }
-
-    private TextField intField(int initial, int min, int max,
-                               java.util.function.IntConsumer setter) {
-        TextField tf = new TextField(String.valueOf(initial));
-        tf.setPrefWidth(80);
-        tf.setStyle("-fx-font-size: 13px;");
-        Runnable apply = () -> {
-            try {
-                int val = Math.max(min, Math.min(max, Integer.parseInt(tf.getText().trim())));
-                setter.accept(val);
-                tf.setText(String.valueOf(val));
-                requestRedraw();
-            } catch (NumberFormatException ignored) {
-                tf.setText(String.valueOf(initial));
-            }
-        };
-        tf.setOnAction(e -> apply.run());
-        tf.focusedProperty().addListener((obs, was, is) -> { if (!is) apply.run(); });
-        return tf;
-    }
-
-    private CheckBox check(String text, boolean selected,
-                           java.util.function.Consumer<Boolean> onChange) {
-        CheckBox cb = new CheckBox(text);
-        cb.setSelected(selected);
-        cb.setStyle("-fx-font-size: 12px;");
-        cb.selectedProperty().addListener((obs, old, val) -> { onChange.accept(val); requestRedraw(); });
-        return cb;
-    }
-
-    private static String truncate(String s, int max) {
-        if (s == null) return "—";
-        return s.length() > max ? s.substring(0, max - 1) + "…" : s;
+    private static String monoVal(int v) {
+        return String.valueOf(v);
     }
 }

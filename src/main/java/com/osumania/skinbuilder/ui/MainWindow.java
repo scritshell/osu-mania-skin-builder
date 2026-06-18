@@ -15,7 +15,6 @@ import javafx.stage.Stage;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Objects;
 
 /**
  * Ventana principal de la aplicación — versión rediseñada con dark theme
@@ -78,14 +77,18 @@ public class MainWindow {
     // ── CSS ───────────────────────────────────────────────────────────────────
 
     private void loadCss(Scene scene) {
-        try {
-            String css = Objects.requireNonNull(
-                    getClass().getResource("/com/osumania/skinbuilder/css/dark-theme.css")
-            ).toExternalForm();
-            scene.getStylesheets().add(css);
-        } catch (NullPointerException e) {
-            System.err.println("[MainWindow] dark-theme.css no encontrado en resources — " +
-                    "asegúrate de copiar dark-theme.css a src/main/resources/com/osumania/skinbuilder/css/");
+        // El CSS debe estar en:
+        //   src/main/resources/com/osumania/skinbuilder/css/dark-theme.css.css
+        // (misma estructura de paquete que las clases Java)
+        var url = getClass().getResource("/com/osumania/skinbuilder/css/dark-theme.css");
+        if (url != null) {
+            scene.getStylesheets().add(url.toExternalForm());
+        } else {
+            System.err.println("[MainWindow] dark-theme.css.css no encontrado.");
+            System.err.println("  → Copia el archivo a:");
+            System.err.println("    src/main/resources/com/osumania/skinbuilder/css/dark-theme.css.css");
+            System.err.println("  → Tu ruta actual parece ser: src/main/resources/skinbuilder/css/");
+            System.err.println("    Asegúrate de que la carpeta sea com/osumania/skinbuilder/css/");
         }
     }
 
